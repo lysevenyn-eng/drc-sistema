@@ -25,7 +25,7 @@ export default async function NovaCompraPage() {
 
   return (
     <div>
-      <PageHeader title="Nova compra" description="Compra por lote — novo lote ou soma a um existente" showBack />
+      <PageHeader title="Nova compra" description="Por lote (novo ou somando a um existente) ou de um único animal" showBack />
       <Card className="max-w-2xl p-5">
         <CompraForm breeds={farmBreeds} lots={activeLots} action={createPurchaseAction} />
       </Card>

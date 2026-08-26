@@ -112,6 +112,12 @@ export default async function VendasPage() {
                   <td className="px-4 py-2.5 font-medium text-drc-green-950">{s.quantity}</td>
                   <td className="px-4 py-2.5 text-drc-green-900/80">
                     {SALE_MODE_LABEL[s.saleMode] ?? s.saleMode}
+                    {s.saleMode === "carcaca" && s.liveWeightKg != null && s.carcassWeightKg != null && (
+                      <p className="mt-0.5 text-xs text-drc-green-900/50">
+                        Rendimento: {((s.carcassWeightKg / s.liveWeightKg) * 100).toFixed(1)}% (
+                        {s.liveWeightKg}kg → {s.carcassWeightKg}kg)
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-drc-green-900/80">{formatCurrency(s.totalValue)}</td>
                   <td className="px-4 py-2.5">

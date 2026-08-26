@@ -22,7 +22,15 @@ export function VendaForm({
   action: (formData: FormData) => void;
 }) {
   const [saleKind, setSaleKind] = useState<"lote" | "individual">("lote");
+  const [saleMode, setSaleMode] = useState<"vivo_cabeca" | "vivo_peso" | "carcaca" | "outra">("vivo_cabeca");
+  const [liveWeight, setLiveWeight] = useState("");
+  const [carcassWeight, setCarcassWeight] = useState("");
   const today = new Date().toISOString().slice(0, 10);
+
+  const liveWeightNum = Number(liveWeight);
+  const carcassWeightNum = Number(carcassWeight);
+  const rendimento =
+    liveWeightNum > 0 && carcassWeightNum > 0 ? (carcassWeightNum / liveWeightNum) * 100 : null;
 
   return (
     <form action={action} className="space-y-4">
@@ -87,7 +95,13 @@ export function VendaForm({
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="Modo da venda">
-          <select name="saleMode" required defaultValue="vivo_cabeca" className={inputClass}>
+          <select
+            name="saleMode"
+            required
+            value={saleMode}
+            onChange={(e) => setSaleMode(e.target.value as typeof saleMode)}
+            className={inputClass}
+          >
             {Object.entries(SALE_MODE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
@@ -100,6 +114,40 @@ export function VendaForm({
         </Field>
       </div>
 
+      {saleMode === "carcaca" && (
+        <div className="rounded-lg border border-drc-border bg-drc-green-950/5 p-3">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Peso vivo antes do abate (kg)">
+              <input
+                name="liveWeightKg"
+                type="number"
+                min={0}
+                step="0.1"
+                value={liveWeight}
+                onChange={(e) => setLiveWeight(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Peso da carcaça depois (kg)">
+              <input
+                name="carcassWeightKg"
+                type="number"
+                min={0}
+                step="0.1"
+                value={carcassWeight}
+                onChange={(e) => setCarcassWeight(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <p className="mt-2 text-xs text-drc-green-900/60">
+            {rendimento != null
+              ? `Rendimento de carcaça: ${rendimento.toFixed(1)}%`
+              : "Preencha os dois pesos (opcional) para calcular o rendimento de carcaça automaticamente."}
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4">
         <Field label="Data da venda">
           <input name="saleDate" type="date" required defaultValue={today} className={inputClass} />
@@ -110,8 +158,8 @@ export function VendaForm({
       </div>
 
       <p className="text-xs text-drc-green-900/50">
-        Custo e lucro são calculados automaticamente a partir do custo por cabeça registrado no
-        lote vinculado (quando existir) — não precisa informar aqui.
+        Custo e lucro são calculados automaticamente a partir do custo registrado no lote ou no
+        próprio animal (quando comprado individual) — não precisa informar aqui.
       </p>
 
       <button

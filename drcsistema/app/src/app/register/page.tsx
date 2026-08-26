@@ -57,6 +57,10 @@ export default function RegisterPage() {
                 autoComplete="email"
                 className="w-full rounded-lg border border-drc-border bg-white px-3 py-2 text-drc-green-950 outline-none focus:border-drc-green-700 focus:ring-2 focus:ring-drc-gold-400/50"
               />
+              <p className="mt-1 text-xs text-drc-green-900/60">
+                Se um administrador já pré-cadastrou seu acesso, use o mesmo e-mail — sua conta
+                é ativada automaticamente, sem precisar de aprovação.
+              </p>
             </div>
             <div>
               <label htmlFor="password" className="mb-1 block text-sm font-medium text-drc-green-900">

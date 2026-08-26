@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { eq } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import {
   startOfMonth,
   endOfMonth,
@@ -16,9 +16,17 @@ import {
 import { ptBR } from "date-fns/locale";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
-import { animals, lots, users, managementTasks, managementTaskAssignees } from "@/db/schema";
+import {
+  animals,
+  lots,
+  users,
+  managementTasks,
+  managementTaskAssignees,
+  accountsPayable,
+} from "@/db/schema";
 import { PageHeader, Card, EmptyState } from "@/components/ui";
 import { IconChevronLeft, IconChevronRight } from "@/components/icons";
+import { formatCurrency } from "@/lib/money";
 
 const TYPE_LABEL: Record<string, string> = {
   vacina: "Vacina",
@@ -41,6 +49,23 @@ type TaskRow = typeof managementTasks.$inferSelect & {
   assignees: AssigneeRow[];
 };
 
+// Uma célula do calendário mistura tarefas de manejo com (só para admins)
+// lembretes de contas a pagar — cada um vira uma "pill" nesse formato comum.
+type Pill = {
+  key: string;
+  href: string;
+  title: string;
+  label: string;
+  tone: "done" | "overdue" | "normal" | "payable";
+};
+
+const PILL_TONE_CLASS: Record<Pill["tone"], string> = {
+  done: "bg-drc-green-950/5 text-drc-green-900/40 line-through",
+  overdue: "bg-red-50 text-red-700",
+  normal: "bg-drc-gold-500/15 text-drc-green-900",
+  payable: "bg-amber-100 text-amber-900",
+};
+
 export default async function ManejoCalendarioPage({
   searchParams,
 }: {
@@ -57,21 +82,64 @@ export default async function ManejoCalendarioPage({
   const parsedMonth = monthParam ? parse(monthParam, "yyyy-MM", now) : now;
   const referenceDate = Number.isNaN(parsedMonth.getTime()) ? now : parsedMonth;
 
-  const tasks: TaskRow[] = await db.query.managementTasks.findMany({
-    where: eq(managementTasks.farmId, farmId),
-    with: { animal: true, lot: true, assignees: { with: { user: true } } },
-    orderBy: (t, { asc }) => [asc(t.scheduledDate)],
-  });
+  const isAdmin = session.role === "admin";
+
+  const [tasks, payables] = await Promise.all([
+    db.query.managementTasks.findMany({
+      where: eq(managementTasks.farmId, farmId),
+      with: { animal: true, lot: true, assignees: { with: { user: true } } },
+      orderBy: (t, { asc }) => [asc(t.scheduledDate)],
+    }) as Promise<TaskRow[]>,
+    isAdmin
+      ? db.query.accountsPayable.findMany({
+          where: and(eq(accountsPayable.farmId, farmId), isNull(accountsPayable.paidAt)),
+          with: { purchase: { columns: { supplierName: true, description: true } } },
+        })
+      : Promise.resolve([]),
+  ]);
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const byDay = new Map<string, TaskRow[]>();
+  const byDay = new Map<string, Pill[]>();
+  const pushPill = (dateKey: string, pill: Pill) => {
+    const list = byDay.get(dateKey);
+    if (list) list.push(pill);
+    else byDay.set(dateKey, [pill]);
+  };
+
   for (const t of tasks) {
     const key = format(new Date(t.scheduledDate), "yyyy-MM-dd");
-    const list = byDay.get(key);
-    if (list) list.push(t);
-    else byDay.set(key, [t]);
+    const isOverdue = !t.completedDate && new Date(t.scheduledDate) < todayStart;
+    const target =
+      t.targetType === "animal"
+        ? t.animal
+          ? `${t.animal.tag}${t.animal.name ? ` — ${t.animal.name}` : ""}`
+          : "—"
+        : (t.lot?.name ?? "—");
+    pushPill(key, {
+      key: `task-${t.id}`,
+      href: "/manejo",
+      title: `${TYPE_LABEL[t.type] ?? t.type} — ${target}`,
+      label: TYPE_LABEL[t.type] ?? t.type,
+      tone: t.completedDate ? "done" : isOverdue ? "overdue" : "normal",
+    });
+  }
+
+  // Lembretes de contas a pagar (só para admins — ver Promise.all acima, que
+  // já não busca nada quando não é admin). Só as não pagas: uma vez paga, o
+  // lembrete deixa de fazer sentido no calendário.
+  for (const p of payables) {
+    const key = format(new Date(p.dueDate), "yyyy-MM-dd");
+    const isOverdue = new Date(p.dueDate) < todayStart;
+    const supplier = p.purchase?.supplierName || p.purchase?.description || "Fornecedor";
+    pushPill(key, {
+      key: `payable-${p.id}`,
+      href: "/financeiro",
+      title: `Pagar ${supplier} — ${formatCurrency(p.value)} (parcela ${p.installmentNumber}/${p.totalInstallments})`,
+      label: `Pagar: ${supplier}`,
+      tone: isOverdue ? "overdue" : "payable",
+    });
   }
 
   const monthStart = startOfMonth(referenceDate);
@@ -152,11 +220,11 @@ export default async function ManejoCalendarioPage({
           ))}
           {days.map((day) => {
             const key = format(day, "yyyy-MM-dd");
-            const dayTasks = byDay.get(key) ?? [];
+            const dayPills = byDay.get(key) ?? [];
             const inMonth = isSameMonth(day, monthStart);
             const isCurrentDay = isToday(day);
-            const visible = dayTasks.slice(0, MAX_PILLS);
-            const overflowCount = dayTasks.length - visible.length;
+            const visible = dayPills.slice(0, MAX_PILLS);
+            const overflowCount = dayPills.length - visible.length;
 
             return (
               <div
@@ -173,31 +241,16 @@ export default async function ManejoCalendarioPage({
                   {format(day, "d")}
                 </p>
                 <div className="space-y-1">
-                  {visible.map((t) => {
-                    const isOverdue = !t.completedDate && new Date(t.scheduledDate) < todayStart;
-                    const target =
-                      t.targetType === "animal"
-                        ? t.animal
-                          ? `${t.animal.tag}${t.animal.name ? ` — ${t.animal.name}` : ""}`
-                          : "—"
-                        : (t.lot?.name ?? "—");
-                    return (
-                      <Link
-                        key={t.id}
-                        href="/manejo"
-                        title={`${TYPE_LABEL[t.type] ?? t.type} — ${target}`}
-                        className={`block truncate rounded px-1.5 py-0.5 text-[11px] leading-tight ${
-                          t.completedDate
-                            ? "bg-drc-green-950/5 text-drc-green-900/40 line-through"
-                            : isOverdue
-                              ? "bg-red-50 text-red-700"
-                              : "bg-drc-gold-500/15 text-drc-green-900"
-                        }`}
-                      >
-                        {TYPE_LABEL[t.type] ?? t.type}
-                      </Link>
-                    );
-                  })}
+                  {visible.map((pill) => (
+                    <Link
+                      key={pill.key}
+                      href={pill.href}
+                      title={pill.title}
+                      className={`block truncate rounded px-1.5 py-0.5 text-[11px] leading-tight ${PILL_TONE_CLASS[pill.tone]}`}
+                    >
+                      {pill.label}
+                    </Link>
+                  ))}
                   {overflowCount > 0 && (
                     <Link
                       href="/manejo"
@@ -220,6 +273,16 @@ export default async function ManejoCalendarioPage({
         </Link>
         .
       </p>
+      {isAdmin && (
+        <p className="mt-1 text-xs text-drc-green-900/50">
+          Os lembretes em laranja/vermelho são contas a pagar (só visíveis para
+          administradores) — levam até{" "}
+          <Link href="/financeiro" className="underline underline-offset-2">
+            Financeiro
+          </Link>
+          , onde dá para marcar como pago.
+        </p>
+      )}
     </div>
   );
 }

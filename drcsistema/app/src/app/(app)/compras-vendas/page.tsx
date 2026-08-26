@@ -24,7 +24,7 @@ export default async function ComprasPage() {
 
   const purchaseList = await db.query.purchases.findMany({
     where: eq(purchases.farmId, farmId),
-    with: { lot: true, breed: true },
+    with: { lot: true, breed: true, animal: true },
     orderBy: (p, { desc }) => [desc(p.purchaseDate)],
   });
 
@@ -53,7 +53,7 @@ export default async function ComprasPage() {
             <thead>
               <tr className="border-b border-drc-border text-left text-xs uppercase tracking-wide text-drc-green-900/60">
                 <th className="px-4 py-2.5">Data</th>
-                <th className="px-4 py-2.5">Lote</th>
+                <th className="px-4 py-2.5">Lote / animal</th>
                 <th className="px-4 py-2.5">Qtd</th>
                 <th className="px-4 py-2.5">Raça / composição</th>
                 <th className="px-4 py-2.5">Valor total</th>
@@ -68,7 +68,12 @@ export default async function ComprasPage() {
                     {new Date(p.purchaseDate).toLocaleDateString("pt-BR")}
                   </td>
                   <td className="px-4 py-2.5 text-drc-green-900/80">
-                    {p.lot ? (
+                    {p.animal ? (
+                      <Link href={`/rebanho/animais/${p.animal.id}`} className="underline underline-offset-2">
+                        {p.animal.tag}
+                        {p.animal.name ? ` — ${p.animal.name}` : ""}
+                      </Link>
+                    ) : p.lot ? (
                       <Link href="/rebanho" className="underline underline-offset-2">
                         {p.lot.name}
                       </Link>
@@ -79,7 +84,9 @@ export default async function ComprasPage() {
                       <p className="mt-0.5 text-xs text-drc-green-900/50">{p.description}</p>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 font-medium text-drc-green-950">{p.quantity}</td>
+                  <td className="px-4 py-2.5 font-medium text-drc-green-950">
+                    {p.animal ? "1 (individual)" : p.quantity}
+                  </td>
                   <td className="px-4 py-2.5 text-drc-green-900/80">
                     {p.breed?.name ?? "—"} · {COMPOSITION_LABEL[p.composition] ?? p.composition}
                   </td>
@@ -90,7 +97,11 @@ export default async function ComprasPage() {
                   <td className="px-4 py-2.5 text-right">
                     <ConfirmForm
                       action={deletePurchaseAction}
-                      confirmMessage={`Excluir esta compra? A quantidade que ela somou ao lote "${p.lot?.name ?? "—"}" será subtraída de volta. O custo por cabeça do lote não é ajustado automaticamente. Esta ação não pode ser desfeita.`}
+                      confirmMessage={
+                        p.animal
+                          ? `Excluir esta compra? O animal "${p.animal.tag}" continua cadastrado no Rebanho, só o valor pago registrado nele volta a branco${p.lot ? ` e a quantidade do lote "${p.lot.name}" é subtraída em 1` : ""}. Esta ação não pode ser desfeita.`
+                          : `Excluir esta compra? A quantidade que ela somou ao lote "${p.lot?.name ?? "—"}" será subtraída de volta. O custo por cabeça do lote não é ajustado automaticamente. Esta ação não pode ser desfeita.`
+                      }
                     >
                       <input type="hidden" name="purchaseId" value={p.id} />
                       <button

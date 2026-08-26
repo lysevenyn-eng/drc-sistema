@@ -73,8 +73,24 @@ export async function registerAction(
   const existing = await db.query.users.findFirst({
     where: eq(users.email, email),
   });
+
   if (existing) {
-    return { error: "Já existe uma conta com esse e-mail." };
+    if (existing.passwordHash) {
+      return { error: "Já existe uma conta com esse e-mail." };
+    }
+
+    // Pré-cadastro feito por um admin (ver preRegisterUserAction, em
+    // actions/admin.ts) — só faltava a senha. farmId/role/status ficam como
+    // o admin já definiu; o nome da fazenda digitado aqui não é usado.
+    const passwordHash = await hashPassword(password);
+    const [user] = await db
+      .update(users)
+      .set({ name, passwordHash, updatedAt: new Date() })
+      .where(eq(users.id, existing.id))
+      .returning();
+
+    await startSession(user);
+    redirect(user.status === "aprovado" ? "/dashboard" : "/access-pending");
   }
 
   let farm = await db.query.farms.findFirst({
@@ -123,7 +139,7 @@ export async function loginAction(
 
   const { email, password } = parsed.data;
   const user = await db.query.users.findFirst({ where: eq(users.email, email) });
-  if (!user || !(await verifyPassword(password, user.passwordHash))) {
+  if (!user || !user.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
     return { error: "E-mail ou senha incorretos." };
   }
 
