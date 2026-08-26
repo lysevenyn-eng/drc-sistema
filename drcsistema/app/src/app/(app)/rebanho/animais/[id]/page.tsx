@@ -1,14 +1,23 @@
+import Link from "next/link";
 import { and, eq, ne } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
-import { breeds, lots, animals, mortalityEvents } from "@/db/schema";
+import { breeds, lots, animals, mortalityEvents, reproductionEvents } from "@/db/schema";
 import { PageHeader, Card, Badge } from "@/components/ui";
 import {
   updateAnimalAction,
   registerDeathAction,
   reactivateAnimalAction,
 } from "@/app/actions/rebanho";
+
+const EVENT_LABEL: Record<string, string> = {
+  cobertura: "Cobertura",
+  diagnostico_gestacao: "Diagnóstico de gestação",
+  parto: "Parto",
+  desmame: "Desmame",
+  obito: "Óbito",
+};
 
 export default async function AnimalDetailPage({
   params,
@@ -25,7 +34,7 @@ export default async function AnimalDetailPage({
   });
   if (!animal) notFound();
 
-  const [farmBreeds, activeLots, mothers, fathers, deaths] = await Promise.all([
+  const [farmBreeds, activeLots, mothers, fathers, deaths, reproHistory] = await Promise.all([
     db.query.breeds.findMany({ where: eq(breeds.farmId, farmId), orderBy: (b, { asc }) => [asc(b.name)] }),
     db.query.lots.findMany({ where: and(eq(lots.farmId, farmId), eq(lots.status, "ativo")) }),
     db.query.animals.findMany({
@@ -48,6 +57,12 @@ export default async function AnimalDetailPage({
       where: eq(mortalityEvents.animalId, id),
       orderBy: (m, { desc }) => [desc(m.eventDate)],
     }),
+    animal.sex === "femea"
+      ? db.query.reproductionEvents.findMany({
+          where: eq(reproductionEvents.motherId, id),
+          orderBy: (e, { desc }) => [desc(e.eventDate)],
+        })
+      : Promise.resolve([]),
   ]);
 
   const birthDateValue = animal.birthDate
@@ -222,6 +237,45 @@ export default async function AnimalDetailPage({
                   </li>
                 ))}
               </ul>
+            </Card>
+          )}
+
+          {animal.sex === "femea" && (
+            <Card className="p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-drc-green-950">Histórico reprodutivo</h2>
+                <Link
+                  href={`/reproducao/novo?motherId=${animal.id}`}
+                  className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                >
+                  + Novo evento
+                </Link>
+              </div>
+              {reproHistory.length === 0 ? (
+                <p className="text-sm text-drc-green-900/60">Nenhum evento registrado ainda.</p>
+              ) : (
+                <ul className="space-y-2 text-sm text-drc-green-900/80">
+                  {reproHistory.map((ev) => (
+                    <li key={ev.id} className="border-b border-drc-border/60 pb-2 last:border-0">
+                      <p className="font-medium text-drc-green-950">
+                        {EVENT_LABEL[ev.eventType] ?? ev.eventType}
+                      </p>
+                      {ev.eventType === "parto" && (
+                        <p>
+                          {ev.offspringCount ?? 0} filhote(s), {ev.liveCount ?? 0} vivo(s)
+                        </p>
+                      )}
+                      {ev.eventType === "diagnostico_gestacao" && (
+                        <p>{ev.pregnant === true ? "Positivo" : ev.pregnant === false ? "Negativo" : "—"}</p>
+                      )}
+                      {ev.notes && <p>{ev.notes}</p>}
+                      <p className="text-xs text-drc-green-900/50">
+                        {new Date(ev.eventDate).toLocaleDateString("pt-BR")}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Card>
           )}
         </div>

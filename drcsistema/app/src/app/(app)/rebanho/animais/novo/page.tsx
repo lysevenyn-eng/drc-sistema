@@ -5,9 +5,15 @@ import { breeds, lots, animals } from "@/db/schema";
 import { PageHeader, Card } from "@/components/ui";
 import { createAnimalAction } from "@/app/actions/rebanho";
 
-export default async function NovoAnimalPage() {
+export default async function NovoAnimalPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ motherId?: string; fatherId?: string; birthDate?: string }>;
+}) {
   const session = await requireSession();
   const farmId = session.farmId;
+  const { motherId: prefillMotherId, fatherId: prefillFatherId, birthDate: prefillBirthDate } =
+    await searchParams;
 
   const [farmBreeds, activeLots, mothers, fathers] = farmId
     ? await Promise.all([
@@ -25,6 +31,12 @@ export default async function NovoAnimalPage() {
   return (
     <div>
       <PageHeader title="Novo animal" description="Cadastro individual de animal" />
+      {prefillMotherId && (
+        <Card className="mb-4 border-drc-gold-500/40 bg-drc-gold-500/10 p-3 text-sm text-drc-green-900">
+          Preenchido a partir do evento de parto registrado em Reprodução — confira e complete
+          o brinco, nome e sexo do filhote.
+        </Card>
+      )}
       <Card className="max-w-2xl p-5">
         <form action={createAnimalAction} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -68,7 +80,7 @@ export default async function NovoAnimalPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Mãe">
-              <select name="motherId" className={inputClass} defaultValue="">
+              <select name="motherId" className={inputClass} defaultValue={prefillMotherId ?? ""}>
                 <option value="">— Não informado —</option>
                 {mothers.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -81,7 +93,7 @@ export default async function NovoAnimalPage() {
               </p>
             </Field>
             <Field label="Pai">
-              <select name="fatherId" className={inputClass} defaultValue="">
+              <select name="fatherId" className={inputClass} defaultValue={prefillFatherId ?? ""}>
                 <option value="">— Não informado —</option>
                 {fathers.map((f) => (
                   <option key={f.id} value={f.id}>
@@ -108,7 +120,12 @@ export default async function NovoAnimalPage() {
               </p>
             </Field>
             <Field label="Data de nascimento">
-              <input name="birthDate" type="date" className={inputClass} />
+              <input
+                name="birthDate"
+                type="date"
+                defaultValue={prefillBirthDate ?? ""}
+                className={inputClass}
+              />
             </Field>
           </div>
 

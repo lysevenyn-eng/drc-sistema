@@ -141,14 +141,37 @@ export const reproductionEvents = pgTable("reproduction_events", {
   fatherId: text("father_id").references(() => animals.id),
   eventType: reproEventTypeEnum("event_type").notNull(),
   eventDate: timestamp("event_date", { withTimezone: true }).notNull().defaultNow(),
-  offspringSex: sexEnum("offspring_sex"),
-  offspringCount: integer("offspring_count").default(1),
-  liveBirth: boolean("live_birth"),
-  offspringAnimalId: text("offspring_animal_id").references(() => animals.id),
+  // Parto: total de filhotes e quantos nasceram vivos (a diferença = natimortos).
+  offspringCount: integer("offspring_count"),
+  liveCount: integer("live_count"),
+  // Diagnóstico de gestação: resultado (true = positivo, false = negativo).
+  pregnant: boolean("pregnant"),
+  // Desmame (e opcionalmente outros eventos): qual filhote já cadastrado o evento se refere.
+  offspringAnimalId: text("offspring_animal_id").references(() => animals.id, {
+    onDelete: "set null",
+  }),
   notes: text("notes"),
   updatedBy: text("updated_by").references(() => users.id),
   ...timestamps,
 });
+
+export const reproductionEventsRelations = relations(reproductionEvents, ({ one }) => ({
+  mother: one(animals, {
+    fields: [reproductionEvents.motherId],
+    references: [animals.id],
+    relationName: "reproMother",
+  }),
+  father: one(animals, {
+    fields: [reproductionEvents.fatherId],
+    references: [animals.id],
+    relationName: "reproFather",
+  }),
+  offspringAnimal: one(animals, {
+    fields: [reproductionEvents.offspringAnimalId],
+    references: [animals.id],
+    relationName: "reproOffspring",
+  }),
+}));
 
 // ---------- Pesagem ----------
 export const weighings = pgTable("weighings", {
