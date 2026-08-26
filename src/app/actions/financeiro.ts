@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { eq, and } from "drizzle-orm";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { walletAccounts } from "@/db/schema";
+import { walletAccounts, accountsPayable } from "@/db/schema";
 
 // Financeiro e Carteira envolvem valores — mesmo padrão admin-only de
 // Compras e vendas (ver comentário equivalente em compras-vendas.ts).
@@ -85,4 +85,50 @@ export async function deleteWalletAccountAction(formData: FormData) {
     .where(and(eq(walletAccounts.id, accountId), eq(walletAccounts.farmId, session.farmId)));
 
   revalidatePath("/carteira");
+}
+
+// ---------- Contas a pagar ----------
+// Nascem em createPurchaseAction (compras-vendas.ts) quando a compra é
+// parcelada — uma linha por parcela. Aqui só o ciclo de vida de uma parcela
+// já criada: marcar como paga (ou desfazer) e excluir. Admin-only, mesma
+// regra do resto do módulo financeiro.
+export async function markPayableAsPaidAction(formData: FormData) {
+  const session = await adminFarmSession();
+  const id = str(formData.get("id"));
+  if (!id) return;
+
+  await db
+    .update(accountsPayable)
+    .set({ paidAt: new Date(), updatedBy: session.userId, updatedAt: new Date() })
+    .where(and(eq(accountsPayable.id, id), eq(accountsPayable.farmId, session.farmId)));
+
+  revalidatePath("/financeiro");
+  revalidatePath("/manejo/calendario");
+}
+
+export async function markPayableAsUnpaidAction(formData: FormData) {
+  const session = await adminFarmSession();
+  const id = str(formData.get("id"));
+  if (!id) return;
+
+  await db
+    .update(accountsPayable)
+    .set({ paidAt: null, updatedBy: session.userId, updatedAt: new Date() })
+    .where(and(eq(accountsPayable.id, id), eq(accountsPayable.farmId, session.farmId)));
+
+  revalidatePath("/financeiro");
+  revalidatePath("/manejo/calendario");
+}
+
+export async function deletePayableAction(formData: FormData) {
+  const session = await adminFarmSession();
+  const id = str(formData.get("id"));
+  if (!id) return;
+
+  await db
+    .delete(accountsPayable)
+    .where(and(eq(accountsPayable.id, id), eq(accountsPayable.farmId, session.farmId)));
+
+  revalidatePath("/financeiro");
+  revalidatePath("/manejo/calendario");
 }

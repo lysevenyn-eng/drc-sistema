@@ -65,7 +65,11 @@ export const users = pgTable(
     farmId: text("farm_id").references(() => farms.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     email: text("email").notNull(),
-    passwordHash: text("password_hash").notNull(),
+    // Nulo = pré-cadastro feito por um admin (ver preRegisterUserAction) que a
+    // pessoa ainda não completou. Ela "ativa" a conta passando pelo /register
+    // com o mesmo e-mail: registerAction detecta o pré-cadastro e só preenche
+    // a senha, mantendo o farmId/role/status que o admin já definiu.
+    passwordHash: text("password_hash"),
     role: roleEnum("role").notNull().default("criador"),
     status: userStatusEnum("status").notNull().default("pendente"),
     ...timestamps,
@@ -246,6 +250,10 @@ export const purchases = pgTable("purchases", {
   // se o animal já foi atribuído a um lote no momento da compra.
   animalId: text("animal_id").references(() => animals.id, { onDelete: "set null" }),
   description: text("description"),
+  // Nome do fornecedor (texto livre) — usado principalmente quando a compra
+  // gera contas a pagar (ver accountsPayable), mas fica disponível em
+  // qualquer compra como referência.
+  supplierName: text("supplier_name"),
   quantity: integer("quantity").notNull(),
   breedId: text("breed_id").references(() => breeds.id),
   composition: compositionEnum("composition").notNull().default("misto"),
@@ -255,10 +263,35 @@ export const purchases = pgTable("purchases", {
   ...timestamps,
 });
 
-export const purchasesRelations = relations(purchases, ({ one }) => ({
+export const purchasesRelations = relations(purchases, ({ one, many }) => ({
   lot: one(lots, { fields: [purchases.lotId], references: [lots.id] }),
   animal: one(animals, { fields: [purchases.animalId], references: [animals.id] }),
   breed: one(breeds, { fields: [purchases.breedId], references: [breeds.id] }),
+  accountsPayable: many(accountsPayable),
+}));
+
+// ---------- Contas a pagar ----------
+// Só existem vinculadas a uma compra parcelada (boleto/negociação) — ver
+// createPurchaseAction. Um "informativo" por parcela, cada um com seu próprio
+// vencimento, pra aparecer no calendário e em Financeiro. Admin-only, mesma
+// regra do resto do módulo financeiro. Exclui em cascata se a compra for
+// excluída (onDelete: cascade no purchaseId abaixo).
+export const accountsPayable = pgTable("accounts_payable", {
+  id: uuid(),
+  farmId: text("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
+  purchaseId: text("purchase_id").notNull().references(() => purchases.id, { onDelete: "cascade" }),
+  installmentNumber: integer("installment_number").notNull(),
+  totalInstallments: integer("total_installments").notNull(),
+  value: numeric("value", { precision: 12, scale: 2, mode: "number" }).notNull(),
+  dueDate: timestamp("due_date", { withTimezone: true }).notNull(),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  notes: text("notes"),
+  updatedBy: text("updated_by").references(() => users.id),
+  ...timestamps,
+});
+
+export const accountsPayableRelations = relations(accountsPayable, ({ one }) => ({
+  purchase: one(purchases, { fields: [accountsPayable.purchaseId], references: [purchases.id] }),
 }));
 
 // ---------- Despesas ----------

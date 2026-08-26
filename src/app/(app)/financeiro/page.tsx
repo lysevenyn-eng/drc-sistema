@@ -3,9 +3,15 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { sales, expenses, purchases } from "@/db/schema";
-import { PageHeader, StatCard, Card, EmptyState } from "@/components/ui";
+import { sales, expenses, purchases, accountsPayable } from "@/db/schema";
+import { PageHeader, StatCard, Card, Badge, EmptyState } from "@/components/ui";
+import { ConfirmForm } from "@/components/confirm-form";
 import { formatCurrency } from "@/lib/money";
+import {
+  markPayableAsPaidAction,
+  markPayableAsUnpaidAction,
+  deletePayableAction,
+} from "@/app/actions/financeiro";
 
 const CATEGORY_LABEL: Record<string, string> = {
   medicamento_vacina: "Medicamento/vacina",
@@ -34,7 +40,7 @@ export default async function FinanceiroPage() {
   }
   const farmId = session.farmId;
 
-  const [saleList, expenseList, purchaseList] = await Promise.all([
+  const [saleList, expenseList, purchaseList, payables] = await Promise.all([
     db.query.sales.findMany({
       where: eq(sales.farmId, farmId),
       columns: { totalValue: true, profit: true, saleDate: true },
@@ -47,6 +53,10 @@ export default async function FinanceiroPage() {
       where: eq(purchases.farmId, farmId),
       columns: { totalValue: true },
     }),
+    db.query.accountsPayable.findMany({
+      where: eq(accountsPayable.farmId, farmId),
+      with: { purchase: { columns: { supplierName: true, description: true } } },
+    }),
   ]);
 
   const totalReceita = saleList.reduce((sum, s) => sum + s.totalValue, 0);
@@ -54,6 +64,19 @@ export default async function FinanceiroPage() {
   const resultadoComercial = totalReceita - totalDespesas;
   const totalLucroVendas = saleList.reduce((sum, s) => sum + (s.profit ?? 0), 0);
   const totalCompras = purchaseList.reduce((sum, p) => sum + p.totalValue, 0);
+
+  // Contas a pagar: não pagas primeiro (mais acionáveis), cada grupo por vencimento.
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const payableRows = payables
+    .map((p) => ({ ...p, isOverdue: !p.paidAt && new Date(p.dueDate) < todayStart }))
+    .sort((a, b) => {
+      if (!!a.paidAt !== !!b.paidAt) return a.paidAt ? 1 : -1;
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
+  const totalPayableAberto = payables
+    .filter((p) => !p.paidAt)
+    .reduce((sum, p) => sum + p.value, 0);
 
   // Despesas por categoria
   const byCategory = new Map<string, { total: number; count: number }>();
@@ -92,7 +115,7 @@ export default async function FinanceiroPage() {
         description="Receitas, despesas e resultado comercial — separado do saldo real disponível na carteira"
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
         <StatCard label="Receita (vendas)" value={formatCurrency(totalReceita)} />
         <StatCard label="Despesas" value={formatCurrency(totalDespesas)} />
         <StatCard
@@ -109,6 +132,11 @@ export default async function FinanceiroPage() {
           label="Investido em compras"
           value={formatCurrency(totalCompras)}
           hint="Não entra no resultado"
+        />
+        <StatCard
+          label="A pagar (em aberto)"
+          value={formatCurrency(totalPayableAberto)}
+          hint="Parcelas pendentes ou atrasadas"
         />
       </div>
 
@@ -178,6 +206,72 @@ export default async function FinanceiroPage() {
           )}
         </Card>
       </div>
+
+      <Card className="mt-4 overflow-x-auto p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-drc-green-950">Contas a pagar</h2>
+          <p className="text-xs text-drc-green-900/50">Geradas por compras parceladas</p>
+        </div>
+        {payableRows.length === 0 ? (
+          <EmptyState>Nenhuma conta a pagar — nenhuma compra parcelada registrada ainda.</EmptyState>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-drc-border text-left text-xs uppercase tracking-wide text-drc-green-900/60">
+                <th className="py-2">Fornecedor</th>
+                <th className="py-2">Parcela</th>
+                <th className="py-2">Vencimento</th>
+                <th className="py-2">Valor</th>
+                <th className="py-2">Status</th>
+                <th className="py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {payableRows.map((p) => (
+                <tr key={p.id} className="border-b border-drc-border/60 last:border-0">
+                  <td className="py-2 text-drc-green-900/80">
+                    {p.purchase?.supplierName || p.purchase?.description || "—"}
+                  </td>
+                  <td className="py-2 text-drc-green-900/80">
+                    {p.installmentNumber}/{p.totalInstallments}
+                  </td>
+                  <td className="py-2 text-drc-green-900/80">
+                    {format(new Date(p.dueDate), "dd/MM/yyyy")}
+                  </td>
+                  <td className="py-2 font-medium text-drc-green-950">{formatCurrency(p.value)}</td>
+                  <td className="py-2">
+                    <Badge tone={p.paidAt ? "green" : p.isOverdue ? "red" : "gold"}>
+                      {p.paidAt ? "Pago" : p.isOverdue ? "Atrasado" : "Pendente"}
+                    </Badge>
+                  </td>
+                  <td className="py-2">
+                    <div className="flex justify-end gap-2">
+                      <form action={p.paidAt ? markPayableAsUnpaidAction : markPayableAsPaidAction}>
+                        <input type="hidden" name="id" value={p.id} />
+                        <button
+                          type="submit"
+                          className="rounded-lg border border-drc-border px-2.5 py-1 text-xs font-medium text-drc-green-900 hover:bg-drc-green-950/5"
+                        >
+                          {p.paidAt ? "Desfazer" : "Marcar como pago"}
+                        </button>
+                      </form>
+                      <ConfirmForm action={deletePayableAction} confirmMessage="Excluir esta conta a pagar?">
+                        <input type="hidden" name="id" value={p.id} />
+                        <button
+                          type="submit"
+                          className="rounded-lg border border-drc-border px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                        >
+                          Excluir
+                        </button>
+                      </ConfirmForm>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
     </div>
   );
 }

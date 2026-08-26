@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { eq, and, sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { purchases, expenses, sales, lots, animals } from "@/db/schema";
+import { purchases, expenses, sales, lots, animals, accountsPayable } from "@/db/schema";
 
 type Sex = "macho" | "femea";
 
@@ -41,6 +41,26 @@ type ExpenseCategory =
   | "outras";
 type SaleMode = "vivo_cabeca" | "vivo_peso" | "carcaca" | "outra";
 
+/**
+ * Divide o valor total em N parcelas iguais (a diferença de arredondamento
+ * fica na última) com vencimentos a cada 30 dias a partir de `firstDueDate`.
+ * Usado por createPurchaseAction quando o pagamento é parcelado.
+ */
+function buildInstallments(totalValue: number, installments: number, firstDueDate: Date) {
+  const base = Math.round((totalValue / installments) * 100) / 100;
+  const rows: { installmentNumber: number; totalInstallments: number; value: number; dueDate: Date }[] = [];
+  let allocated = 0;
+  for (let i = 0; i < installments; i++) {
+    const isLast = i === installments - 1;
+    const value = isLast ? Math.round((totalValue - allocated) * 100) / 100 : base;
+    allocated += value;
+    const dueDate = new Date(firstDueDate);
+    dueDate.setDate(dueDate.getDate() + i * 30);
+    rows.push({ installmentNumber: i + 1, totalInstallments: installments, value, dueDate });
+  }
+  return rows;
+}
+
 // ---------- Compras ----------
 /**
  * Registra uma compra — por lote ou individual (um animal só).
@@ -64,6 +84,13 @@ type SaleMode = "vivo_cabeca" | "vivo_peso" | "carcaca" | "outra";
 export async function createPurchaseAction(formData: FormData) {
   const session = await adminFarmSession();
   const purchaseKind = str(formData.get("purchaseKind")) || "lote";
+
+  const supplierName = optStr(formData.get("supplierName"));
+  const paymentType = str(formData.get("paymentType")) || "a_vista";
+  const installmentsCount = optNum(formData.get("installments"));
+  const firstDueDateStr = str(formData.get("firstDueDate"));
+  const isParcelado =
+    paymentType === "parcelado" && !!installmentsCount && installmentsCount >= 1 && !!firstDueDateStr;
 
   if (purchaseKind === "individual") {
     const tag = str(formData.get("tag"));
@@ -101,22 +128,39 @@ export async function createPurchaseAction(formData: FormData) {
           .where(eq(lots.id, lotId));
       }
 
-      await tx.insert(purchases).values({
-        farmId: session.farmId,
-        animalId: newAnimal.id,
-        lotId,
-        description: optStr(formData.get("description")),
-        quantity: 1,
-        breedId,
-        composition: sex,
-        totalValue,
-        purchaseDate: new Date(purchaseDateStr),
-        updatedBy: session.userId,
-      });
+      const [newPurchase] = await tx
+        .insert(purchases)
+        .values({
+          farmId: session.farmId,
+          animalId: newAnimal.id,
+          lotId,
+          description: optStr(formData.get("description")),
+          supplierName,
+          quantity: 1,
+          breedId,
+          composition: sex,
+          totalValue,
+          purchaseDate: new Date(purchaseDateStr),
+          updatedBy: session.userId,
+        })
+        .returning({ id: purchases.id });
+
+      if (isParcelado) {
+        await tx.insert(accountsPayable).values(
+          buildInstallments(totalValue, installmentsCount!, new Date(firstDueDateStr)).map((row) => ({
+            farmId: session.farmId,
+            purchaseId: newPurchase.id,
+            updatedBy: session.userId,
+            ...row,
+          }))
+        );
+      }
     });
 
     revalidatePath("/compras-vendas");
     revalidatePath("/rebanho");
+    revalidatePath("/financeiro");
+    revalidatePath("/manejo/calendario");
     redirect("/compras-vendas");
   }
 
@@ -170,21 +214,38 @@ export async function createPurchaseAction(formData: FormData) {
       targetLotId = lotId;
     }
 
-    await tx.insert(purchases).values({
-      farmId: session.farmId,
-      lotId: targetLotId,
-      description: optStr(formData.get("description")),
-      quantity,
-      breedId,
-      composition,
-      totalValue,
-      purchaseDate: new Date(purchaseDateStr),
-      updatedBy: session.userId,
-    });
+    const [newPurchase] = await tx
+      .insert(purchases)
+      .values({
+        farmId: session.farmId,
+        lotId: targetLotId,
+        description: optStr(formData.get("description")),
+        supplierName,
+        quantity,
+        breedId,
+        composition,
+        totalValue,
+        purchaseDate: new Date(purchaseDateStr),
+        updatedBy: session.userId,
+      })
+      .returning({ id: purchases.id });
+
+    if (isParcelado) {
+      await tx.insert(accountsPayable).values(
+        buildInstallments(totalValue, installmentsCount!, new Date(firstDueDateStr)).map((row) => ({
+          farmId: session.farmId,
+          purchaseId: newPurchase.id,
+          updatedBy: session.userId,
+          ...row,
+        }))
+      );
+    }
   });
 
   revalidatePath("/compras-vendas");
   revalidatePath("/rebanho");
+  revalidatePath("/financeiro");
+  revalidatePath("/manejo/calendario");
   redirect("/compras-vendas");
 }
 

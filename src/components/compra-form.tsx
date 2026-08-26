@@ -16,6 +16,7 @@ export function CompraForm({
 }) {
   const [purchaseKind, setPurchaseKind] = useState<"lote" | "individual">("lote");
   const [lotOption, setLotOption] = useState<"novo" | "existente">(lots.length > 0 ? "existente" : "novo");
+  const [paymentType, setPaymentType] = useState<"a_vista" | "parcelado">("a_vista");
   const today = new Date().toISOString().slice(0, 10);
 
   return (
@@ -43,6 +44,18 @@ export function CompraForm({
             Animal individual
           </label>
         </div>
+      </Field>
+
+      <Field label="Fornecedor (opcional)">
+        <input
+          name="supplierName"
+          className={inputClass}
+          placeholder="Nome de quem vendeu"
+          required={paymentType === "parcelado"}
+        />
+        <p className="mt-1 text-xs text-drc-green-900/50">
+          Usado no lembrete de pagamento quando a compra é parcelada.
+        </p>
       </Field>
 
       {purchaseKind === "lote" ? (
@@ -213,6 +226,47 @@ export function CompraForm({
             <textarea name="description" rows={2} className={inputClass} placeholder="Ex.: origem, vendedor, observações" />
           </Field>
         </>
+      )}
+
+      <Field label="Forma de pagamento">
+        <div className="flex gap-4 text-sm text-drc-green-900">
+          <label className="flex items-center gap-1.5">
+            <input
+              type="radio"
+              name="paymentType"
+              value="a_vista"
+              checked={paymentType === "a_vista"}
+              onChange={() => setPaymentType("a_vista")}
+            />
+            À vista
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input
+              type="radio"
+              name="paymentType"
+              value="parcelado"
+              checked={paymentType === "parcelado"}
+              onChange={() => setPaymentType("parcelado")}
+            />
+            Parcelado (boleto/negociação)
+          </label>
+        </div>
+      </Field>
+
+      {paymentType === "parcelado" && (
+        <div className="grid grid-cols-2 gap-4 rounded-lg bg-drc-green-950/5 p-3">
+          <Field label="Número de parcelas">
+            <input name="installments" type="number" min={1} defaultValue={2} required className={inputClass} />
+          </Field>
+          <Field label="Vencimento da 1ª parcela">
+            <input name="firstDueDate" type="date" required defaultValue={today} className={inputClass} />
+          </Field>
+          <p className="col-span-2 text-xs text-drc-green-900/60">
+            Cria um lembrete de pagamento por parcela em Contas a pagar (Financeiro) e no
+            calendário, visível só para administradores. As parcelas seguintes vencem a cada 30
+            dias a partir da data acima, com o valor total dividido em partes iguais.
+          </p>
+        </div>
       )}
 
       <button
