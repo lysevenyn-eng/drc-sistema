@@ -16,7 +16,7 @@ export default async function NovoLotePage() {
 
   return (
     <div>
-      <PageHeader title="Novo lote" description="Cadastrar um novo lote de animais" />
+      <PageHeader title="Novo lote" description="Cadastrar um novo lote de animais" showBack />
       <Card className="max-w-xl p-5">
         <form action={createLotAction} className="space-y-4">
           <Field label="Nome do lote">

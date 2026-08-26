@@ -4,6 +4,7 @@ import { useState } from "react";
 
 type AnimalOption = { id: string; tag: string; name: string | null };
 type LotOption = { id: string; name: string };
+type UserOption = { id: string; name: string };
 
 const TYPE_LABELS: Record<string, string> = {
   vacina: "Vacina",
@@ -16,12 +17,14 @@ const TYPE_LABELS: Record<string, string> = {
 export function ManejoTaskForm({
   animals,
   lots,
+  users,
   action,
   defaultAnimalId,
   defaultLotId,
 }: {
   animals: AnimalOption[];
   lots: LotOption[];
+  users: UserOption[];
   action: (formData: FormData) => void;
   defaultAnimalId?: string;
   defaultLotId?: string;
@@ -50,14 +53,33 @@ export function ManejoTaskForm({
         </Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Responsável (opcional)">
-          <input name="responsible" className={inputClass} />
-        </Field>
-        <Field label="Data agendada">
-          <input name="scheduledDate" type="date" required defaultValue={today} className={inputClass} />
-        </Field>
-      </div>
+      <Field label="Data agendada">
+        <input name="scheduledDate" type="date" required defaultValue={today} className={inputClass} />
+      </Field>
+
+      <Field label="Responsáveis (opcional)">
+        <div className="space-y-1.5 rounded-lg border border-drc-border bg-white p-3">
+          {users.length === 0 ? (
+            <p className="text-xs text-drc-green-900/50">Nenhum usuário aprovado nesta fazenda ainda.</p>
+          ) : (
+            users.map((u) => (
+              <label key={u.id} className="flex items-center gap-2 text-sm text-drc-green-900">
+                <input
+                  type="checkbox"
+                  name="assigneeIds"
+                  value={u.id}
+                  className="h-4 w-4 rounded border-drc-border"
+                />
+                {u.name}
+              </label>
+            ))
+          )}
+        </div>
+        <p className="mt-1 text-xs text-drc-green-900/50">
+          Pode marcar mais de um — a tarefa passa a aparecer em &quot;Minhas tarefas&quot; para
+          cada um deles.
+        </p>
+      </Field>
 
       <Field label="Aplicar em">
         <div className="flex gap-4 text-sm text-drc-green-900">

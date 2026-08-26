@@ -2,10 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { requireSession, requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { managementTasks } from "@/db/schema";
+import { managementTasks, managementTaskAssignees, users } from "@/db/schema";
 
 async function farmSession() {
   const session = await requireSession();
@@ -35,21 +35,43 @@ export async function createManagementTaskAction(formData: FormData) {
   if (targetType === "animal" && !animalId) return;
   if (targetType === "lote" && !lotId) return;
 
-  await db.insert(managementTasks).values({
-    farmId: session.farmId,
-    type,
-    product: optStr(formData.get("product")),
-    dose: optStr(formData.get("dose")),
-    responsible: optStr(formData.get("responsible")),
-    targetType,
-    animalId,
-    lotId,
-    scheduledDate: new Date(scheduledDateStr),
-    notes: optStr(formData.get("notes")),
-    updatedBy: session.userId,
+  // Só aceita responsáveis que sejam de fato usuários aprovados desta fazenda —
+  // evita que um id de outra fazenda entre por um formulário adulterado.
+  const requestedAssigneeIds = [...new Set(formData.getAll("assigneeIds").map(String).filter(Boolean))];
+  const validAssignees =
+    requestedAssigneeIds.length > 0
+      ? await db.query.users.findMany({
+          where: and(eq(users.farmId, session.farmId), inArray(users.id, requestedAssigneeIds)),
+          columns: { id: true },
+        })
+      : [];
+
+  await db.transaction(async (tx) => {
+    const [task] = await tx
+      .insert(managementTasks)
+      .values({
+        farmId: session.farmId,
+        type,
+        product: optStr(formData.get("product")),
+        dose: optStr(formData.get("dose")),
+        targetType,
+        animalId,
+        lotId,
+        scheduledDate: new Date(scheduledDateStr),
+        notes: optStr(formData.get("notes")),
+        updatedBy: session.userId,
+      })
+      .returning({ id: managementTasks.id });
+
+    if (validAssignees.length > 0) {
+      await tx
+        .insert(managementTaskAssignees)
+        .values(validAssignees.map((u) => ({ taskId: task.id, userId: u.id })));
+    }
   });
 
   revalidatePath("/manejo");
+  revalidatePath("/manejo/calendario");
   if (animalId) revalidatePath(`/rebanho/animais/${animalId}`);
   redirect("/manejo");
 }
@@ -67,6 +89,7 @@ export async function completeManagementTaskAction(formData: FormData) {
     .where(and(eq(managementTasks.id, taskId), eq(managementTasks.farmId, session.farmId)));
 
   revalidatePath("/manejo");
+  revalidatePath("/manejo/calendario");
   if (animalId) revalidatePath(`/rebanho/animais/${animalId}`);
 }
 
@@ -83,6 +106,7 @@ export async function reopenManagementTaskAction(formData: FormData) {
     .where(and(eq(managementTasks.id, taskId), eq(managementTasks.farmId, session.farmId)));
 
   revalidatePath("/manejo");
+  revalidatePath("/manejo/calendario");
   if (animalId) revalidatePath(`/rebanho/animais/${animalId}`);
 }
 
@@ -98,5 +122,6 @@ export async function deleteManagementTaskAction(formData: FormData) {
     .where(and(eq(managementTasks.id, taskId), eq(managementTasks.farmId, session.farmId)));
 
   revalidatePath("/manejo");
+  revalidatePath("/manejo/calendario");
   if (animalId) revalidatePath(`/rebanho/animais/${animalId}`);
 }

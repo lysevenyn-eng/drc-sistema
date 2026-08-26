@@ -197,7 +197,6 @@ export const managementTasks = pgTable("management_tasks", {
   type: taskTypeEnum("type").notNull(),
   product: text("product"),
   dose: text("dose"),
-  responsible: text("responsible"),
   targetType: taskTargetEnum("target_type").notNull(),
   animalId: text("animal_id").references(() => animals.id, { onDelete: "cascade" }),
   lotId: text("lot_id").references(() => lots.id, { onDelete: "cascade" }),
@@ -208,9 +207,28 @@ export const managementTasks = pgTable("management_tasks", {
   ...timestamps,
 });
 
-export const managementTasksRelations = relations(managementTasks, ({ one }) => ({
+export const managementTasksRelations = relations(managementTasks, ({ one, many }) => ({
   animal: one(animals, { fields: [managementTasks.animalId], references: [animals.id] }),
   lot: one(lots, { fields: [managementTasks.lotId], references: [lots.id] }),
+  assignees: many(managementTaskAssignees),
+}));
+
+// Responsáveis por uma tarefa de manejo — vários usuários podem compartilhar a
+// mesma tarefa (substitui o antigo campo de texto livre "responsible").
+export const managementTaskAssignees = pgTable(
+  "management_task_assignees",
+  {
+    id: uuid(),
+    taskId: text("task_id").notNull().references(() => managementTasks.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("task_assignee_idx").on(t.taskId, t.userId)]
+);
+
+export const managementTaskAssigneesRelations = relations(managementTaskAssignees, ({ one }) => ({
+  task: one(managementTasks, { fields: [managementTaskAssignees.taskId], references: [managementTasks.id] }),
+  user: one(users, { fields: [managementTaskAssignees.userId], references: [users.id] }),
 }));
 
 // ---------- Compras ----------

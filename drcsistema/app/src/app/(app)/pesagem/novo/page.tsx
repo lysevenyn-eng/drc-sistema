@@ -25,7 +25,7 @@ export default async function NovaPesagemPage({
 
   return (
     <div>
-      <PageHeader title="Nova pesagem" description="Registrar o peso de um animal" />
+      <PageHeader title="Nova pesagem" description="Registrar o peso de um animal" showBack />
       <Card className="max-w-xl p-5">
         <form action={createWeighingAction} className="space-y-4">
           <Field label="Animal" hint="Busque pelo brinco ou nome na lista.">

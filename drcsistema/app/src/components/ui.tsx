@@ -1,15 +1,20 @@
+import { BackButton } from "@/components/back-button";
+
 export function PageHeader({
   title,
   description,
   action,
+  showBack = false,
 }: {
   title: string;
   description?: string;
   action?: React.ReactNode;
+  showBack?: boolean;
 }) {
   return (
     <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
       <div>
+        {showBack && <BackButton />}
         <h1 className="text-xl font-semibold text-drc-green-950">{title}</h1>
         {description && (
           <p className="mt-1 text-sm text-drc-green-900/70">{description}</p>

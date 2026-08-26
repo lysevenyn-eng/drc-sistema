@@ -99,6 +99,7 @@ export default async function AnimalDetailPage({
     db.query.managementTasks.findMany({
       where: eq(managementTasks.animalId, id),
       orderBy: (t, { desc }) => [desc(t.scheduledDate)],
+      with: { assignees: { with: { user: true } } },
     }),
   ]);
 
@@ -114,6 +115,7 @@ export default async function AnimalDetailPage({
       <PageHeader
         title={`${animal.tag}${animal.name ? " — " + animal.name : ""}`}
         description="Editar cadastro do animal"
+        showBack
         action={
           <Badge tone={animal.status === "ativo" ? "green" : animal.status === "vendido" ? "gold" : "red"}>
             {animal.status === "ativo" ? "Ativo" : animal.status === "vendido" ? "Vendido" : "Morto"}
@@ -366,7 +368,12 @@ export default async function AnimalDetailPage({
               <p className="text-sm text-drc-green-900/60">Nenhuma tarefa registrada ainda.</p>
             ) : (
               <ul className="space-y-2 text-sm text-drc-green-900/80">
-                {tasks.map((t) => (
+                {tasks.map((t) => {
+                  const assigned = t.assignees
+                    .map((a) => a.user?.name)
+                    .filter(Boolean)
+                    .join(", ");
+                  return (
                   <li
                     key={t.id}
                     className="flex items-start justify-between gap-2 border-b border-drc-border/60 pb-2 last:border-0"
@@ -386,6 +393,9 @@ export default async function AnimalDetailPage({
                           ? ` · concluída em ${new Date(t.completedDate).toLocaleDateString("pt-BR")}`
                           : ""}
                       </p>
+                      {assigned && (
+                        <p className="text-xs text-drc-green-900/50">Atribuído a: {assigned}</p>
+                      )}
                       {t.notes && <p className="text-xs text-drc-green-900/50">{t.notes}</p>}
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -429,7 +439,8 @@ export default async function AnimalDetailPage({
                       )}
                     </div>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </Card>
