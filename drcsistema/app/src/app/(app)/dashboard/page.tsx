@@ -83,7 +83,7 @@ export default async function DashboardPage() {
   const pendingCount = pendingTasks.length - overdueCount;
 
   // Resultado comercial do mês atual — só calculado (e só exibido) para admin,
-  // mesma regra de "criador sem valores financeiros" do resto do sistema.
+  // mesma regra de "só admin vê valores financeiros" do resto do sistema.
   const isAdmin = session.role === "admin";
   const monthStart = startOfMonth(todayStart);
   const monthEnd = endOfMonth(todayStart);

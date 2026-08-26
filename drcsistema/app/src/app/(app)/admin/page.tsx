@@ -83,6 +83,7 @@ export default async function AdminPage({
             </label>
             <select id="pc-role" name="role" defaultValue="criador" className={inputClass}>
               <option value="criador">Criador</option>
+              <option value="caseiro">Caseiro</option>
               <option value="admin">Administrador</option>
             </select>
           </div>
@@ -152,18 +153,22 @@ export default async function AdminPage({
                 </Badge>
               )}
               {u.status === "aprovado" && u.id !== admin.userId && (
-                <form action={setUserRoleAction}>
+                <form action={setUserRoleAction} className="flex items-center gap-1.5">
                   <input type="hidden" name="userId" value={u.id} />
-                  <input
-                    type="hidden"
+                  <select
                     name="role"
-                    value={u.role === "admin" ? "criador" : "admin"}
-                  />
+                    defaultValue={u.role}
+                    className="rounded-lg border border-drc-border bg-white px-2 py-1.5 text-xs text-drc-green-900 outline-none focus:border-drc-green-700"
+                  >
+                    <option value="criador">Criador</option>
+                    <option value="caseiro">Caseiro</option>
+                    <option value="admin">Administrador</option>
+                  </select>
                   <button
                     type="submit"
                     className="rounded-lg border border-drc-border px-3 py-1.5 text-xs font-medium text-drc-green-900 hover:bg-drc-green-950/5"
                   >
-                    {u.role === "admin" ? "Tornar criador" : "Tornar administrador"}
+                    Salvar
                   </button>
                 </form>
               )}

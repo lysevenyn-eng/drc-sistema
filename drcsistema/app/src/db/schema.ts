@@ -17,7 +17,7 @@ const timestamps = {
 };
 
 // ---------- Enums ----------
-export const roleEnum = pgEnum("role", ["admin", "criador"]);
+export const roleEnum = pgEnum("role", ["admin", "criador", "caseiro"]);
 export const userStatusEnum = pgEnum("user_status", ["pendente", "aprovado", "rejeitado"]);
 export const sexEnum = pgEnum("sex", ["macho", "femea"]);
 export const compositionEnum = pgEnum("composition", ["macho", "femea", "misto"]);
