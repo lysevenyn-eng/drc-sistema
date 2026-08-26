@@ -102,6 +102,10 @@ export default async function NovoAnimalPage() {
                   </option>
                 ))}
               </select>
+              <p className="mt-1 text-xs text-drc-green-900/50">
+                Use quando este animal já faz parte de um lote existente. Vincular não soma
+                mais um animal ao total — a quantidade do lote já inclui ele.
+              </p>
             </Field>
             <Field label="Data de nascimento">
               <input name="birthDate" type="date" className={inputClass} />
