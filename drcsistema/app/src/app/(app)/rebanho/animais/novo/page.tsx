@@ -129,6 +129,13 @@ export default async function NovoAnimalPage({
             </Field>
           </div>
 
+          <Field label="Peso ao nascer (kg, opcional)">
+            <input name="birthWeightKg" type="number" min={0} step={0.1} className={inputClass} />
+            <p className="mt-1 text-xs text-drc-green-900/50">
+              Vira a primeira pesagem do histórico — já entra no cálculo do GPD.
+            </p>
+          </Field>
+
           <button
             type="submit"
             className="rounded-lg bg-drc-gold-500 px-4 py-2.5 font-semibold text-drc-green-950 hover:bg-drc-gold-400"

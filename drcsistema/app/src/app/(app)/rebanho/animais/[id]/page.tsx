@@ -3,13 +3,15 @@ import { and, eq, ne } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
-import { breeds, lots, animals, mortalityEvents, reproductionEvents } from "@/db/schema";
+import { breeds, lots, animals, mortalityEvents, reproductionEvents, weighings } from "@/db/schema";
 import { PageHeader, Card, Badge } from "@/components/ui";
 import {
   updateAnimalAction,
   registerDeathAction,
   reactivateAnimalAction,
 } from "@/app/actions/rebanho";
+import { deleteWeighingAction } from "@/app/actions/pesagem";
+import { computeGpdSeries, overallGpd, formatGpd } from "@/lib/gpd";
 
 const EVENT_LABEL: Record<string, string> = {
   cobertura: "Cobertura",
@@ -34,7 +36,7 @@ export default async function AnimalDetailPage({
   });
   if (!animal) notFound();
 
-  const [farmBreeds, activeLots, mothers, fathers, deaths, reproHistory] = await Promise.all([
+  const [farmBreeds, activeLots, mothers, fathers, deaths, reproHistory, weighHistory] = await Promise.all([
     db.query.breeds.findMany({ where: eq(breeds.farmId, farmId), orderBy: (b, { asc }) => [asc(b.name)] }),
     db.query.lots.findMany({ where: and(eq(lots.farmId, farmId), eq(lots.status, "ativo")) }),
     db.query.animals.findMany({
@@ -63,7 +65,14 @@ export default async function AnimalDetailPage({
           orderBy: (e, { desc }) => [desc(e.eventDate)],
         })
       : Promise.resolve([]),
+    db.query.weighings.findMany({
+      where: eq(weighings.animalId, id),
+      orderBy: (w, { desc }) => [desc(w.weighedAt)],
+    }),
   ]);
+
+  const weighGpdById = computeGpdSeries(weighHistory);
+  const weighOverallGpd = overallGpd(weighHistory);
 
   const birthDateValue = animal.birthDate
     ? new Date(animal.birthDate).toISOString().slice(0, 10)
@@ -221,6 +230,60 @@ export default async function AnimalDetailPage({
                   </button>
                 </form>
               </div>
+            )}
+          </Card>
+
+          <Card className="p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-drc-green-950">Pesagens</h2>
+              <Link
+                href={`/pesagem/novo?animalId=${animal.id}`}
+                className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+              >
+                + Nova pesagem
+              </Link>
+            </div>
+            {weighHistory.length === 0 ? (
+              <p className="text-sm text-drc-green-900/60">Nenhuma pesagem registrada ainda.</p>
+            ) : (
+              <>
+                {weighOverallGpd != null && (
+                  <p className="mb-3 rounded-lg bg-drc-gold-500/10 px-3 py-2 text-xs font-medium text-drc-green-900">
+                    GPD geral: {formatGpd(weighOverallGpd)}
+                  </p>
+                )}
+                <ul className="space-y-2 text-sm text-drc-green-900/80">
+                  {weighHistory.map((w) => (
+                    <li
+                      key={w.id}
+                      className="flex items-start justify-between gap-2 border-b border-drc-border/60 pb-2 last:border-0"
+                    >
+                      <div>
+                        <p className="font-medium text-drc-green-950">
+                          {w.weightKg} kg
+                          <span className="ml-2 font-normal text-drc-green-900/60">
+                            {formatGpd(weighGpdById.get(w.id) ?? null)}
+                          </span>
+                        </p>
+                        <p className="text-xs text-drc-green-900/50">
+                          {new Date(w.weighedAt).toLocaleDateString("pt-BR")}
+                          {w.notes ? ` — ${w.notes}` : ""}
+                        </p>
+                      </div>
+                      <form action={deleteWeighingAction}>
+                        <input type="hidden" name="weighingId" value={w.id} />
+                        <input type="hidden" name="animalId" value={animal.id} />
+                        <button
+                          type="submit"
+                          className="text-xs font-medium text-red-600 underline underline-offset-2"
+                        >
+                          Excluir
+                        </button>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </Card>
 

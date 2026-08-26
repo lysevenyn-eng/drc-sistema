@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { eq, and, sql } from "drizzle-orm";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
-import { animals, lots, breeds, mortalityEvents } from "@/db/schema";
+import { animals, lots, breeds, mortalityEvents, weighings } from "@/db/schema";
 
 async function farmSession() {
   const session = await requireSession();
@@ -77,24 +77,45 @@ export async function createAnimalAction(formData: FormData) {
   const sex = str(formData.get("sex")) as "macho" | "femea";
   if (!tag || !sex) return;
 
-  await db.insert(animals).values({
-    farmId: session.farmId,
-    tag,
-    name: optStr(formData.get("name")),
-    breedId: optStr(formData.get("breedId")),
-    sex,
-    isPO: formData.get("isPO") === "on",
-    pedigreeNumber: optStr(formData.get("pedigreeNumber")),
-    fatherId: optStr(formData.get("fatherId")),
-    motherId: optStr(formData.get("motherId")),
-    lotId: optStr(formData.get("lotId")),
-    birthDate: optStr(formData.get("birthDate"))
-      ? new Date(str(formData.get("birthDate")))
-      : null,
-    updatedBy: session.userId,
+  const birthDateStr = optStr(formData.get("birthDate"));
+  const birthDate = birthDateStr ? new Date(birthDateStr) : null;
+  const birthWeightKg = optNum(formData.get("birthWeightKg"));
+
+  await db.transaction(async (tx) => {
+    const [newAnimal] = await tx
+      .insert(animals)
+      .values({
+        farmId: session.farmId,
+        tag,
+        name: optStr(formData.get("name")),
+        breedId: optStr(formData.get("breedId")),
+        sex,
+        isPO: formData.get("isPO") === "on",
+        pedigreeNumber: optStr(formData.get("pedigreeNumber")),
+        fatherId: optStr(formData.get("fatherId")),
+        motherId: optStr(formData.get("motherId")),
+        lotId: optStr(formData.get("lotId")),
+        birthDate,
+        updatedBy: session.userId,
+      })
+      .returning({ id: animals.id });
+
+    // Peso ao nascer vira a primeira pesagem do histórico do animal — é a partir
+    // daí (e das pesagens seguintes) que o GPD é calculado na aba Pesagem.
+    if (birthWeightKg != null && birthWeightKg > 0) {
+      await tx.insert(weighings).values({
+        farmId: session.farmId,
+        animalId: newAnimal.id,
+        weightKg: birthWeightKg,
+        weighedAt: birthDate ?? new Date(),
+        notes: "Peso ao nascer",
+        updatedBy: session.userId,
+      });
+    }
   });
 
   revalidatePath("/rebanho");
+  revalidatePath("/pesagem");
   redirect("/rebanho");
 }
 

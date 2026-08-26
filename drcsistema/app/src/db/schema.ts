@@ -185,6 +185,10 @@ export const weighings = pgTable("weighings", {
   ...timestamps,
 });
 
+export const weighingsRelations = relations(weighings, ({ one }) => ({
+  animal: one(animals, { fields: [weighings.animalId], references: [animals.id] }),
+}));
+
 // ---------- Manejo e tarefas / calendário ----------
 export const managementTasks = pgTable("management_tasks", {
   id: uuid(),
