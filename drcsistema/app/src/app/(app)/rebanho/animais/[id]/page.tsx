@@ -144,6 +144,10 @@ export default async function AnimalDetailPage({
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs text-drc-green-900/50">
+                  Vincular não soma mais um animal ao total — a quantidade do lote já inclui
+                  este animal.
+                </p>
               </Field>
               <Field label="Data de nascimento">
                 <input name="birthDate" type="date" defaultValue={birthDateValue} className={inputClass} />
