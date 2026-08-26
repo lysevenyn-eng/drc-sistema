@@ -110,10 +110,16 @@ export default async function RebanhoPage() {
                           {lot.status === "ativo" ? "Encerrar" : "Reativar"}
                         </button>
                       </form>
+                      <Link
+                        href={`/manejo/novo?lotId=${lot.id}`}
+                        className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                      >
+                        + Tarefa
+                      </Link>
                       {isAdmin && (
                         <ConfirmForm
                           action={deleteLotAction}
-                          confirmMessage={`Excluir o lote "${lot.name}"? Os animais vinculados ficam sem lote (não são excluídos). Esta ação não pode ser desfeita.`}
+                          confirmMessage={`Excluir o lote "${lot.name}"? Os animais vinculados ficam sem lote (não são excluídos), mas as tarefas de manejo agendadas para este lote serão excluídas junto. Esta ação não pode ser desfeita.`}
                         >
                           <input type="hidden" name="lotId" value={lot.id} />
                           <button

@@ -3,7 +3,15 @@ import { and, eq, ne } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
-import { breeds, lots, animals, mortalityEvents, reproductionEvents, weighings } from "@/db/schema";
+import {
+  breeds,
+  lots,
+  animals,
+  mortalityEvents,
+  reproductionEvents,
+  weighings,
+  managementTasks,
+} from "@/db/schema";
 import { PageHeader, Card, Badge } from "@/components/ui";
 import {
   updateAnimalAction,
@@ -12,6 +20,11 @@ import {
   deleteAnimalAction,
 } from "@/app/actions/rebanho";
 import { deleteWeighingAction } from "@/app/actions/pesagem";
+import {
+  completeManagementTaskAction,
+  reopenManagementTaskAction,
+  deleteManagementTaskAction,
+} from "@/app/actions/manejo";
 import { computeGpdSeries, overallGpd, formatGpd } from "@/lib/gpd";
 import { ConfirmForm } from "@/components/confirm-form";
 
@@ -21,6 +34,14 @@ const EVENT_LABEL: Record<string, string> = {
   parto: "Parto",
   desmame: "Desmame",
   obito: "Óbito",
+};
+
+const TASK_TYPE_LABEL: Record<string, string> = {
+  vacina: "Vacina",
+  vermifugo: "Vermífugo",
+  medicamento: "Medicamento",
+  casqueamento: "Casqueamento",
+  outro: "Outro",
 };
 
 export default async function AnimalDetailPage({
@@ -42,7 +63,7 @@ export default async function AnimalDetailPage({
   });
   if (!animal) notFound();
 
-  const [farmBreeds, activeLots, mothers, fathers, deaths, reproHistory, weighHistory] = await Promise.all([
+  const [farmBreeds, activeLots, mothers, fathers, deaths, reproHistory, weighHistory, tasks] = await Promise.all([
     db.query.breeds.findMany({ where: eq(breeds.farmId, farmId), orderBy: (b, { asc }) => [asc(b.name)] }),
     db.query.lots.findMany({ where: and(eq(lots.farmId, farmId), eq(lots.status, "ativo")) }),
     db.query.animals.findMany({
@@ -75,6 +96,11 @@ export default async function AnimalDetailPage({
       where: eq(weighings.animalId, id),
       orderBy: (w, { desc }) => [desc(w.weighedAt)],
     }),
+    db.query.managementTasks.findMany({
+      where: eq(managementTasks.animalId, id),
+      orderBy: (t, { desc }) => [desc(t.scheduledDate)],
+      with: { assignees: { with: { user: true } } },
+    }),
   ]);
 
   const weighGpdById = computeGpdSeries(weighHistory);
@@ -89,6 +115,7 @@ export default async function AnimalDetailPage({
       <PageHeader
         title={`${animal.tag}${animal.name ? " — " + animal.name : ""}`}
         description="Editar cadastro do animal"
+        showBack
         action={
           <Badge tone={animal.status === "ativo" ? "green" : animal.status === "vendido" ? "gold" : "red"}>
             {animal.status === "ativo" ? "Ativo" : animal.status === "vendido" ? "Vendido" : "Morto"}
@@ -324,6 +351,97 @@ export default async function AnimalDetailPage({
                   ))}
                 </ul>
               </>
+            )}
+          </Card>
+
+          <Card className="p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-drc-green-950">Manejo</h2>
+              <Link
+                href={`/manejo/novo?animalId=${animal.id}`}
+                className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+              >
+                + Nova tarefa
+              </Link>
+            </div>
+            {tasks.length === 0 ? (
+              <p className="text-sm text-drc-green-900/60">Nenhuma tarefa registrada ainda.</p>
+            ) : (
+              <ul className="space-y-2 text-sm text-drc-green-900/80">
+                {tasks.map((t) => {
+                  const assigned = t.assignees
+                    .map((a) => a.user?.name)
+                    .filter(Boolean)
+                    .join(", ");
+                  return (
+                  <li
+                    key={t.id}
+                    className="flex items-start justify-between gap-2 border-b border-drc-border/60 pb-2 last:border-0"
+                  >
+                    <div>
+                      <p className="flex items-center gap-2 font-medium text-drc-green-950">
+                        {TASK_TYPE_LABEL[t.type] ?? t.type}
+                        <Badge tone={t.completedDate ? "green" : "gold"}>
+                          {t.completedDate ? "Concluída" : "Pendente"}
+                        </Badge>
+                      </p>
+                      <p className="text-xs text-drc-green-900/50">
+                        {(t.product || t.dose) &&
+                          `${t.product ?? ""}${t.product && t.dose ? " — " : ""}${t.dose ?? ""} · `}
+                        {new Date(t.scheduledDate).toLocaleDateString("pt-BR")}
+                        {t.completedDate
+                          ? ` · concluída em ${new Date(t.completedDate).toLocaleDateString("pt-BR")}`
+                          : ""}
+                      </p>
+                      {assigned && (
+                        <p className="text-xs text-drc-green-900/50">Atribuído a: {assigned}</p>
+                      )}
+                      {t.notes && <p className="text-xs text-drc-green-900/50">{t.notes}</p>}
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      {t.completedDate ? (
+                        <form action={reopenManagementTaskAction}>
+                          <input type="hidden" name="taskId" value={t.id} />
+                          <input type="hidden" name="animalId" value={animal.id} />
+                          <button
+                            type="submit"
+                            className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                          >
+                            Reabrir
+                          </button>
+                        </form>
+                      ) : (
+                        <form action={completeManagementTaskAction}>
+                          <input type="hidden" name="taskId" value={t.id} />
+                          <input type="hidden" name="animalId" value={animal.id} />
+                          <button
+                            type="submit"
+                            className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                          >
+                            Concluir
+                          </button>
+                        </form>
+                      )}
+                      {isAdmin && (
+                        <ConfirmForm
+                          action={deleteManagementTaskAction}
+                          confirmMessage="Excluir esta tarefa de manejo? Esta ação não pode ser desfeita."
+                        >
+                          <input type="hidden" name="taskId" value={t.id} />
+                          <input type="hidden" name="animalId" value={animal.id} />
+                          <button
+                            type="submit"
+                            className="text-xs font-medium text-red-600 underline underline-offset-2"
+                          >
+                            Excluir
+                          </button>
+                        </ConfirmForm>
+                      )}
+                    </div>
+                  </li>
+                  );
+                })}
+              </ul>
             )}
           </Card>
 

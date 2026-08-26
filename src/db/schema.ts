@@ -114,6 +114,11 @@ export const animals = pgTable(
     status: animalStatusEnum("status").notNull().default("ativo"),
     birthDate: timestamp("birth_date", { withTimezone: true }),
     acquiredAt: timestamp("acquired_at", { withTimezone: true }).notNull().defaultNow(),
+    // Custo de aquisição só quando o animal foi comprado individualmente (ver
+    // compras-vendas.ts / createPurchaseAction) — equivalente ao costPerHead de
+    // um lote, mas por animal. Valor financeiro: nunca exibir fora de telas
+    // admin-only (Compras e vendas), mesma regra do resto do módulo.
+    acquisitionCost: numeric("acquisition_cost", { precision: 12, scale: 2, mode: "number" }),
     statusReason: text("status_reason"), // motivo obrigatório ao dar baixa (morte, etc.)
     statusChangedAt: timestamp("status_changed_at", { withTimezone: true }),
     updatedBy: text("updated_by").references(() => users.id),
@@ -197,7 +202,6 @@ export const managementTasks = pgTable("management_tasks", {
   type: taskTypeEnum("type").notNull(),
   product: text("product"),
   dose: text("dose"),
-  responsible: text("responsible"),
   targetType: taskTargetEnum("target_type").notNull(),
   animalId: text("animal_id").references(() => animals.id, { onDelete: "cascade" }),
   lotId: text("lot_id").references(() => lots.id, { onDelete: "cascade" }),
@@ -208,11 +212,39 @@ export const managementTasks = pgTable("management_tasks", {
   ...timestamps,
 });
 
+export const managementTasksRelations = relations(managementTasks, ({ one, many }) => ({
+  animal: one(animals, { fields: [managementTasks.animalId], references: [animals.id] }),
+  lot: one(lots, { fields: [managementTasks.lotId], references: [lots.id] }),
+  assignees: many(managementTaskAssignees),
+}));
+
+// Responsáveis por uma tarefa de manejo — vários usuários podem compartilhar a
+// mesma tarefa (substitui o antigo campo de texto livre "responsible").
+export const managementTaskAssignees = pgTable(
+  "management_task_assignees",
+  {
+    id: uuid(),
+    taskId: text("task_id").notNull().references(() => managementTasks.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("task_assignee_idx").on(t.taskId, t.userId)]
+);
+
+export const managementTaskAssigneesRelations = relations(managementTaskAssignees, ({ one }) => ({
+  task: one(managementTasks, { fields: [managementTaskAssignees.taskId], references: [managementTasks.id] }),
+  user: one(users, { fields: [managementTaskAssignees.userId], references: [users.id] }),
+}));
+
 // ---------- Compras ----------
 export const purchases = pgTable("purchases", {
   id: uuid(),
   farmId: text("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
   lotId: text("lot_id").references(() => lots.id, { onDelete: "set null" }),
+  // Preenchido só em compra individual (um animal só, não um lote) — ver
+  // createPurchaseAction. lotId acima também pode estar preenchido junto,
+  // se o animal já foi atribuído a um lote no momento da compra.
+  animalId: text("animal_id").references(() => animals.id, { onDelete: "set null" }),
   description: text("description"),
   quantity: integer("quantity").notNull(),
   breedId: text("breed_id").references(() => breeds.id),
@@ -222,6 +254,12 @@ export const purchases = pgTable("purchases", {
   updatedBy: text("updated_by").references(() => users.id),
   ...timestamps,
 });
+
+export const purchasesRelations = relations(purchases, ({ one }) => ({
+  lot: one(lots, { fields: [purchases.lotId], references: [lots.id] }),
+  animal: one(animals, { fields: [purchases.animalId], references: [animals.id] }),
+  breed: one(breeds, { fields: [purchases.breedId], references: [breeds.id] }),
+}));
 
 // ---------- Despesas ----------
 export const expenses = pgTable("expenses", {
@@ -237,6 +275,11 @@ export const expenses = pgTable("expenses", {
   ...timestamps,
 });
 
+export const expensesRelations = relations(expenses, ({ one }) => ({
+  lot: one(lots, { fields: [expenses.lotId], references: [lots.id] }),
+  animal: one(animals, { fields: [expenses.animalId], references: [animals.id] }),
+}));
+
 // ---------- Vendas ----------
 export const sales = pgTable("sales", {
   id: uuid(),
@@ -250,11 +293,22 @@ export const sales = pgTable("sales", {
   totalValue: numeric("total_value", { precision: 12, scale: 2, mode: "number" }).notNull(),
   costBasis: numeric("cost_basis", { precision: 12, scale: 2, mode: "number" }),
   profit: numeric("profit", { precision: 12, scale: 2, mode: "number" }),
+  // Só usados quando saleMode = "carcaca" — peso vivo (antes do abate) e peso
+  // da carcaça (depois), pra calcular o rendimento de carcaça (carcaça ÷ vivo).
+  // Guardados como dois pesos em vez de já salvar o percentual pronto, pra não
+  // duplicar dado nem correr risco de o percentual ficar desatualizado.
+  liveWeightKg: numeric("live_weight_kg", { precision: 6, scale: 2, mode: "number" }),
+  carcassWeightKg: numeric("carcass_weight_kg", { precision: 6, scale: 2, mode: "number" }),
   saleDate: timestamp("sale_date", { withTimezone: true }).notNull().defaultNow(),
   buyer: text("buyer"),
   updatedBy: text("updated_by").references(() => users.id),
   ...timestamps,
 });
+
+export const salesRelations = relations(sales, ({ one }) => ({
+  lot: one(lots, { fields: [sales.lotId], references: [lots.id] }),
+  animal: one(animals, { fields: [sales.animalId], references: [animals.id] }),
+}));
 
 // ---------- Óbitos (baixa por morte) ----------
 export const mortalityEvents = pgTable("mortality_events", {

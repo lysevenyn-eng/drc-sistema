@@ -37,6 +37,7 @@ export default async function NovoEventoReproducaoPage({
       <PageHeader
         title="Novo evento reprodutivo"
         description="Cobertura, diagnóstico de gestação, parto ou desmame"
+        showBack
       />
       <Card className="max-w-2xl p-5">
         <ReproEventForm

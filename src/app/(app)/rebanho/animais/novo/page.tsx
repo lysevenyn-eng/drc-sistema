@@ -30,7 +30,7 @@ export default async function NovoAnimalPage({
 
   return (
     <div>
-      <PageHeader title="Novo animal" description="Cadastro individual de animal" />
+      <PageHeader title="Novo animal" description="Cadastro individual de animal" showBack />
       {prefillMotherId && (
         <Card className="mb-4 border-drc-gold-500/40 bg-drc-gold-500/10 p-3 text-sm text-drc-green-900">
           Preenchido a partir do evento de parto registrado em Reprodução — confira e complete

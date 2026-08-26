@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -18,7 +18,11 @@ import {
   IconMenu,
   IconClose,
   IconLogout,
+  IconChevronLeft,
+  IconChevronRight,
 } from "@/components/icons";
+
+const SIDEBAR_COLLAPSED_KEY = "drc-sidebar-collapsed";
 
 const NAV = [
   { href: "/dashboard", label: "Visão geral", Icon: IconDashboard, adminOnly: false },
@@ -26,7 +30,7 @@ const NAV = [
   { href: "/reproducao", label: "Reprodução e P.O.", Icon: IconRepro, adminOnly: false },
   { href: "/pesagem", label: "Pesagem", Icon: IconScale, adminOnly: false },
   { href: "/manejo", label: "Manejo e calendário", Icon: IconTasks, adminOnly: false },
-  { href: "/compras-vendas", label: "Compras e vendas", Icon: IconTrade, adminOnly: false },
+  { href: "/compras-vendas", label: "Compras e vendas", Icon: IconTrade, adminOnly: true },
   { href: "/financeiro", label: "Financeiro", Icon: IconFinance, adminOnly: true },
   { href: "/carteira", label: "Carteira", Icon: IconWallet, adminOnly: true },
   { href: "/admin", label: "Administração", Icon: IconAdmin, adminOnly: true },
@@ -34,17 +38,51 @@ const NAV = [
 
 type NavItem = (typeof NAV)[number];
 
+// Estado do menu recolhido, sincronizado com localStorage via useSyncExternalStore
+// (em vez de useState + useEffect) — evita divergência entre a renderização no
+// servidor (sem acesso a localStorage) e a do navegador, e evita "setState" no
+// corpo de um efeito.
+const collapsedListeners = new Set<() => void>();
+
+function subscribeCollapsed(callback: () => void) {
+  collapsedListeners.add(callback);
+  return () => collapsedListeners.delete(callback);
+}
+
+function getCollapsedSnapshot() {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function getCollapsedServerSnapshot() {
+  return false;
+}
+
+function setCollapsedStore(value: boolean) {
+  try {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? "1" : "0");
+  } catch {
+    // ignora falha ao salvar a preferência (modo privado, etc.)
+  }
+  collapsedListeners.forEach((notify) => notify());
+}
+
 function NavLinks({
   items,
   pathname,
   onNavigate,
+  collapsed = false,
 }: {
   items: readonly NavItem[];
   pathname: string;
   onNavigate?: () => void;
+  collapsed?: boolean;
 }) {
   return (
-    <nav className="flex flex-1 flex-col gap-1 px-3">
+    <nav className={`flex flex-1 flex-col gap-1 ${collapsed ? "px-2" : "px-3"}`}>
       {items.map(({ href, label, Icon }) => {
         const active = pathname === href || pathname.startsWith(href + "/");
         return (
@@ -52,14 +90,17 @@ function NavLinks({
             key={href}
             href={href}
             onClick={onNavigate}
+            title={collapsed ? label : undefined}
             className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
+              collapsed ? "justify-center px-0" : ""
+            } ${
               active
                 ? "bg-drc-gold-500 text-drc-green-950"
                 : "text-drc-cream-100/85 hover:bg-white/10"
             }`}
           >
             <Icon className="h-5 w-5 shrink-0" />
-            <span className="truncate">{label}</span>
+            {!collapsed && <span className="truncate">{label}</span>}
           </Link>
         );
       })}
@@ -80,39 +121,76 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const collapsed = useSyncExternalStore(
+    subscribeCollapsed,
+    getCollapsedSnapshot,
+    getCollapsedServerSnapshot
+  );
+
+  function toggleCollapsed() {
+    setCollapsedStore(!collapsed);
+  }
 
   const items = NAV.filter((item) => !item.adminOnly || role === "admin");
 
   return (
     <div className="flex min-h-screen bg-drc-cream-100">
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 flex-col bg-drc-green-950 py-6 md:flex">
-        <div className="flex items-center gap-3 px-4 pb-6">
+      <aside
+        className={`hidden shrink-0 flex-col bg-drc-green-950 py-6 transition-[width] duration-200 md:flex ${
+          collapsed ? "w-20" : "w-64"
+        }`}
+      >
+        <div className={`flex items-center gap-3 pb-6 ${collapsed ? "justify-center px-2" : "px-4"}`}>
           <Image
             src="/drc-logo.png"
             alt="DRC"
             width={44}
             height={44}
-            className="rounded-full"
+            className="shrink-0 rounded-full"
           />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-white">DRC</p>
-            <p className="truncate text-xs text-drc-cream-100/60">{farmName}</p>
-          </div>
+          {!collapsed && (
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-white">DRC</p>
+              <p className="truncate text-xs text-drc-cream-100/60">{farmName}</p>
+            </div>
+          )}
         </div>
-        <NavLinks items={items} pathname={pathname} />
-        <div className="mt-4 border-t border-white/10 px-4 pt-4">
-          <p className="truncate text-sm font-medium text-white">{userName}</p>
-          <p className="text-xs uppercase tracking-wide text-drc-gold-400">
-            {role === "admin" ? "Administrador" : "Criador"}
-          </p>
+
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+          title={collapsed ? "Expandir menu" : "Recolher menu"}
+          className={`mx-3 mb-4 flex items-center gap-2 rounded-lg border border-white/10 py-2 text-xs font-medium text-drc-cream-100/70 transition hover:bg-white/10 hover:text-white ${
+            collapsed ? "justify-center px-0" : "px-3"
+          }`}
+        >
+          {collapsed ? <IconChevronRight className="h-4 w-4 shrink-0" /> : <IconChevronLeft className="h-4 w-4 shrink-0" />}
+          {!collapsed && "Recolher menu"}
+        </button>
+
+        <NavLinks items={items} pathname={pathname} collapsed={collapsed} />
+
+        <div className={`mt-4 border-t border-white/10 pt-4 ${collapsed ? "px-2" : "px-4"}`}>
+          {!collapsed && (
+            <>
+              <p className="truncate text-sm font-medium text-white">{userName}</p>
+              <p className="text-xs uppercase tracking-wide text-drc-gold-400">
+                {role === "admin" ? "Administrador" : "Criador"}
+              </p>
+            </>
+          )}
           <form action={logoutAction} className="mt-3">
             <button
               type="submit"
-              className="flex items-center gap-2 text-sm text-drc-cream-100/70 hover:text-white"
+              title="Sair"
+              className={`flex items-center gap-2 text-sm text-drc-cream-100/70 hover:text-white ${
+                collapsed ? "w-full justify-center" : ""
+              }`}
             >
-              <IconLogout className="h-4 w-4" />
-              Sair
+              <IconLogout className="h-4 w-4 shrink-0" />
+              {!collapsed && "Sair"}
             </button>
           </form>
         </div>

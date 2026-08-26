@@ -6,7 +6,10 @@ import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth";
 // still happens server-side via requireSession()/requireAdmin() (see lib/session.ts).
 
 const PUBLIC_PATHS = ["/login", "/register"];
-const ADMIN_ONLY_PREFIXES = ["/financeiro", "/carteira", "/admin"];
+// Compras e vendas envolve valores (custo de compra, receita/lucro de venda) — o
+// papel "criador" não deve ter acesso a valores financeiros, mesma regra já
+// aplicada a /financeiro e /carteira.
+const ADMIN_ONLY_PREFIXES = ["/financeiro", "/carteira", "/admin", "/compras-vendas"];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
