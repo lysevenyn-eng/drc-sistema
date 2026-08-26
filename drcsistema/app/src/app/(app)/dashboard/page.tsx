@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
 import { animals, lots } from "@/db/schema";
@@ -11,10 +11,15 @@ export default async function DashboardPage() {
   }
   const farmId = session.farmId;
 
+  // Só conta como "individual" quem NÃO está em lote. Um animal cadastrado
+  // individualmente e também vinculado a um lote já faz parte da quantidade
+  // daquele lote — contar os dois duplicaria o animal no total.
   const [individualCountRow] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(animals)
-    .where(and(eq(animals.farmId, farmId), eq(animals.status, "ativo")));
+    .where(
+      and(eq(animals.farmId, farmId), eq(animals.status, "ativo"), isNull(animals.lotId))
+    );
 
   const [poCountRow] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -40,8 +45,8 @@ export default async function DashboardPage() {
       <PageHeader title="Visão geral" description="Resumo do rebanho DRC" />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Total no rebanho" value={totalGeral} hint="Individuais + lotes" />
-        <StatCard label="Animais individuais" value={individualCount} />
+        <StatCard label="Total no rebanho" value={totalGeral} hint="Sem lote + em lotes" />
+        <StatCard label="Sem lote" value={individualCount} hint="Individuais fora de um lote" />
         <StatCard
           label="Em lotes"
           value={lotHeadcount}
