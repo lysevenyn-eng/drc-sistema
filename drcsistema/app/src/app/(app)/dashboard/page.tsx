@@ -1,9 +1,12 @@
+import Link from "next/link";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { format } from "date-fns";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
-import { animals, lots } from "@/db/schema";
+import { animals, lots, managementTasks } from "@/db/schema";
 import { PageHeader, StatCard, Card, EmptyState } from "@/components/ui";
 import { overallGpd, formatGpd } from "@/lib/gpd";
+import { MiniCalendario } from "@/components/mini-calendario";
 
 export default async function DashboardPage() {
   const session = await requireSession();
@@ -54,6 +57,30 @@ export default async function DashboardPage() {
   const lotHeadcount = lotAgg?.headcount ?? 0;
   const totalGeral = individualCount + lotHeadcount;
 
+  // Tarefas de manejo pendentes (não concluídas) — usadas no mini calendário do
+  // card "Tarefas de manejo". Sem filtro de data na query: o volume de tarefas
+  // em aberto de uma fazenda é pequeno, mais simples separar por dia aqui mesmo.
+  const pendingTasks = await db.query.managementTasks.findMany({
+    where: and(eq(managementTasks.farmId, farmId), isNull(managementTasks.completedDate)),
+    columns: { id: true, scheduledDate: true },
+  });
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const pendingDays = new Set<string>();
+  const overdueDays = new Set<string>();
+  let overdueCount = 0;
+  for (const t of pendingTasks) {
+    const scheduled = new Date(t.scheduledDate);
+    const key = format(scheduled, "yyyy-MM-dd");
+    if (scheduled < todayStart) {
+      overdueDays.add(key);
+      overdueCount++;
+    } else {
+      pendingDays.add(key);
+    }
+  }
+  const pendingCount = pendingTasks.length - overdueCount;
+
   return (
     <div>
       <PageHeader title="Visão geral" description="Resumo do rebanho DRC" />
@@ -79,11 +106,29 @@ export default async function DashboardPage() {
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Card className="p-5">
-          <h2 className="text-sm font-semibold text-drc-green-950">Tarefas de manejo</h2>
-          <p className="mt-2 text-sm text-drc-green-900/60">
-            Em breve — calendário de manejo.
-          </p>
+        <Card className="p-0">
+          <Link
+            href="/manejo/calendario"
+            className="block rounded-xl p-5 transition hover:bg-drc-green-950/[0.03]"
+          >
+            <h2 className="text-sm font-semibold text-drc-green-950">Tarefas de manejo</h2>
+            <p className="mt-1 text-xs text-drc-green-900/60">
+              {pendingTasks.length === 0
+                ? "Nenhuma tarefa pendente."
+                : `${pendingCount} pendente${pendingCount === 1 ? "" : "s"}${
+                    overdueCount > 0
+                      ? `, ${overdueCount} atrasada${overdueCount === 1 ? "" : "s"}`
+                      : ""
+                  }.`}
+            </p>
+            <div className="mt-3">
+              <MiniCalendario
+                monthDate={todayStart}
+                pendingDays={pendingDays}
+                overdueDays={overdueDays}
+              />
+            </div>
+          </Link>
         </Card>
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-drc-green-950">Resultado comercial</h2>

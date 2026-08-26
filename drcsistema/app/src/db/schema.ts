@@ -246,6 +246,11 @@ export const purchases = pgTable("purchases", {
   ...timestamps,
 });
 
+export const purchasesRelations = relations(purchases, ({ one }) => ({
+  lot: one(lots, { fields: [purchases.lotId], references: [lots.id] }),
+  breed: one(breeds, { fields: [purchases.breedId], references: [breeds.id] }),
+}));
+
 // ---------- Despesas ----------
 export const expenses = pgTable("expenses", {
   id: uuid(),
@@ -259,6 +264,11 @@ export const expenses = pgTable("expenses", {
   updatedBy: text("updated_by").references(() => users.id),
   ...timestamps,
 });
+
+export const expensesRelations = relations(expenses, ({ one }) => ({
+  lot: one(lots, { fields: [expenses.lotId], references: [lots.id] }),
+  animal: one(animals, { fields: [expenses.animalId], references: [animals.id] }),
+}));
 
 // ---------- Vendas ----------
 export const sales = pgTable("sales", {
@@ -278,6 +288,11 @@ export const sales = pgTable("sales", {
   updatedBy: text("updated_by").references(() => users.id),
   ...timestamps,
 });
+
+export const salesRelations = relations(sales, ({ one }) => ({
+  lot: one(lots, { fields: [sales.lotId], references: [lots.id] }),
+  animal: one(animals, { fields: [sales.animalId], references: [animals.id] }),
+}));
 
 // ---------- Óbitos (baixa por morte) ----------
 export const mortalityEvents = pgTable("mortality_events", {

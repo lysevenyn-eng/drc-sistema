@@ -30,7 +30,7 @@ const NAV = [
   { href: "/reproducao", label: "Reprodução e P.O.", Icon: IconRepro, adminOnly: false },
   { href: "/pesagem", label: "Pesagem", Icon: IconScale, adminOnly: false },
   { href: "/manejo", label: "Manejo e calendário", Icon: IconTasks, adminOnly: false },
-  { href: "/compras-vendas", label: "Compras e vendas", Icon: IconTrade, adminOnly: false },
+  { href: "/compras-vendas", label: "Compras e vendas", Icon: IconTrade, adminOnly: true },
   { href: "/financeiro", label: "Financeiro", Icon: IconFinance, adminOnly: true },
   { href: "/carteira", label: "Carteira", Icon: IconWallet, adminOnly: true },
   { href: "/admin", label: "Administração", Icon: IconAdmin, adminOnly: true },
