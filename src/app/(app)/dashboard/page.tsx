@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { format } from "date-fns";
+import { and, eq, isNull, gte, lte, sql } from "drizzle-orm";
+import { format, startOfMonth, endOfMonth } from "date-fns";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
-import { animals, lots, managementTasks } from "@/db/schema";
+import { animals, lots, managementTasks, sales, expenses } from "@/db/schema";
 import { PageHeader, StatCard, Card, EmptyState } from "@/components/ui";
 import { overallGpd, formatGpd } from "@/lib/gpd";
+import { formatCurrency } from "@/lib/money";
 import { MiniCalendario } from "@/components/mini-calendario";
 
 export default async function DashboardPage() {
@@ -81,6 +82,28 @@ export default async function DashboardPage() {
   }
   const pendingCount = pendingTasks.length - overdueCount;
 
+  // Resultado comercial do mês atual — só calculado (e só exibido) para admin,
+  // mesma regra de "criador sem valores financeiros" do resto do sistema.
+  const isAdmin = session.role === "admin";
+  const monthStart = startOfMonth(todayStart);
+  const monthEnd = endOfMonth(todayStart);
+  const [monthSales, monthExpenses] = isAdmin
+    ? await Promise.all([
+        db.query.sales.findMany({
+          where: and(eq(sales.farmId, farmId), gte(sales.saleDate, monthStart), lte(sales.saleDate, monthEnd)),
+          columns: { totalValue: true },
+        }),
+        db.query.expenses.findMany({
+          where: and(eq(expenses.farmId, farmId), gte(expenses.date, monthStart), lte(expenses.date, monthEnd)),
+          columns: { value: true },
+        }),
+      ])
+    : [[], []];
+  const resultadoMes = isAdmin
+    ? monthSales.reduce((sum, s) => sum + s.totalValue, 0) -
+      monthExpenses.reduce((sum, e) => sum + e.value, 0)
+    : null;
+
   return (
     <div>
       <PageHeader title="Visão geral" description="Resumo do rebanho DRC" />
@@ -105,7 +128,7 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className={`mt-6 grid gap-4 ${isAdmin ? "lg:grid-cols-2" : ""}`}>
         <Card className="p-0">
           <Link
             href="/manejo/calendario"
@@ -130,12 +153,25 @@ export default async function DashboardPage() {
             </div>
           </Link>
         </Card>
-        <Card className="p-5">
-          <h2 className="text-sm font-semibold text-drc-green-950">Resultado comercial</h2>
-          <p className="mt-2 text-sm text-drc-green-900/60">
-            Em breve — receitas, despesas e resultado comercial.
-          </p>
-        </Card>
+        {isAdmin && (
+          <Card className="p-0">
+            <Link
+              href="/financeiro"
+              className="block rounded-xl p-5 transition hover:bg-drc-green-950/[0.03]"
+            >
+              <h2 className="text-sm font-semibold text-drc-green-950">Resultado comercial</h2>
+              <p className="mt-1 text-xs text-drc-green-900/60">Vendas − despesas neste mês</p>
+              <p
+                className={`mt-3 text-2xl font-semibold ${
+                  (resultadoMes ?? 0) >= 0 ? "text-drc-green-950" : "text-red-600"
+                }`}
+              >
+                {formatCurrency(resultadoMes)}
+              </p>
+              <p className="mt-2 text-xs text-drc-green-900/50">Ver financeiro completo →</p>
+            </Link>
+          </Card>
+        )}
       </div>
 
       <Card className="mt-6 flex flex-wrap items-center justify-between gap-3 p-5">
