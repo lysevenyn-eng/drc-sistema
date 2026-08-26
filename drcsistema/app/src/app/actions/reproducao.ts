@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq, and } from "drizzle-orm";
-import { requireSession } from "@/lib/session";
+import { requireSession, requireAdmin } from "@/lib/session";
 import { db } from "@/db";
 import { reproductionEvents } from "@/db/schema";
 
@@ -78,7 +78,8 @@ export async function createReproductionEventAction(formData: FormData) {
 }
 
 export async function deleteReproductionEventAction(formData: FormData) {
-  const session = await farmSession();
+  const session = await requireAdmin();
+  if (!session.farmId) return;
   const eventId = str(formData.get("eventId"));
   if (!eventId) return;
 

@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/session";
 import { db } from "@/db";
 import { animals, lots } from "@/db/schema";
 import { PageHeader, StatCard, Card, EmptyState } from "@/components/ui";
+import { overallGpd, formatGpd } from "@/lib/gpd";
 
 export default async function DashboardPage() {
   const session = await requireSession();
@@ -36,6 +37,19 @@ export default async function DashboardPage() {
     .from(lots)
     .where(and(eq(lots.farmId, farmId), eq(lots.status, "ativo")));
 
+  // GPD médio do rebanho: GPD geral (1ª à última pesagem) de cada animal ativo
+  // com pelo menos 2 pesagens, depois a média simples entre esses animais.
+  const animalsWithWeighings = await db.query.animals.findMany({
+    where: and(eq(animals.farmId, farmId), eq(animals.status, "ativo")),
+    columns: { id: true },
+    with: { weighings: { columns: { id: true, weightKg: true, weighedAt: true } } },
+  });
+  const gpdValues = animalsWithWeighings
+    .map((a) => overallGpd(a.weighings))
+    .filter((g): g is number => g != null);
+  const avgGpd =
+    gpdValues.length > 0 ? gpdValues.reduce((sum, g) => sum + g, 0) / gpdValues.length : null;
+
   const individualCount = individualCountRow?.count ?? 0;
   const lotHeadcount = lotAgg?.headcount ?? 0;
   const totalGeral = individualCount + lotHeadcount;
@@ -44,7 +58,7 @@ export default async function DashboardPage() {
     <div>
       <PageHeader title="Visão geral" description="Resumo do rebanho DRC" />
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard label="Total no rebanho" value={totalGeral} hint="Sem lote + em lotes" />
         <StatCard label="Sem lote" value={individualCount} hint="Individuais fora de um lote" />
         <StatCard
@@ -53,6 +67,15 @@ export default async function DashboardPage() {
           hint={`${lotAgg?.lots ?? 0} lote(s) ativo(s)`}
         />
         <StatCard label="Animais P.O." value={poCountRow?.count ?? 0} />
+        <StatCard
+          label="GPD médio do rebanho"
+          value={formatGpd(avgGpd)}
+          hint={
+            gpdValues.length > 0
+              ? `${gpdValues.length} animal(is) com histórico de pesagem`
+              : "Sem pesagens suficientes ainda"
+          }
+        />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">

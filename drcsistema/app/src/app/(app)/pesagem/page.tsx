@@ -6,6 +6,7 @@ import { weighings } from "@/db/schema";
 import { PageHeader, Card, EmptyState } from "@/components/ui";
 import { deleteWeighingAction } from "@/app/actions/pesagem";
 import { computeGpdSeries, formatGpd } from "@/lib/gpd";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export default async function PesagemPage() {
   const session = await requireSession();
@@ -13,6 +14,7 @@ export default async function PesagemPage() {
     return <EmptyState>Sua conta ainda não está vinculada a uma fazenda.</EmptyState>;
   }
   const farmId = session.farmId;
+  const isAdmin = session.role === "admin";
 
   const rows = await db.query.weighings.findMany({
     where: eq(weighings.farmId, farmId),
@@ -85,16 +87,21 @@ export default async function PesagemPage() {
                     {formatGpd(gpdById.get(r.id) ?? null)}
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <form action={deleteWeighingAction}>
-                      <input type="hidden" name="weighingId" value={r.id} />
-                      <input type="hidden" name="animalId" value={r.animalId} />
-                      <button
-                        type="submit"
-                        className="text-xs font-medium text-red-600 underline underline-offset-2"
+                    {isAdmin && (
+                      <ConfirmForm
+                        action={deleteWeighingAction}
+                        confirmMessage="Excluir esta pesagem? Esta ação não pode ser desfeita."
                       >
-                        Excluir
-                      </button>
-                    </form>
+                        <input type="hidden" name="weighingId" value={r.id} />
+                        <input type="hidden" name="animalId" value={r.animalId} />
+                        <button
+                          type="submit"
+                          className="text-xs font-medium text-red-600 underline underline-offset-2"
+                        >
+                          Excluir
+                        </button>
+                      </ConfirmForm>
+                    )}
                   </td>
                 </tr>
               ))}

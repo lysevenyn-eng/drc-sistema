@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq, and } from "drizzle-orm";
-import { requireSession } from "@/lib/session";
+import { requireSession, requireAdmin } from "@/lib/session";
 import { db } from "@/db";
 import { weighings } from "@/db/schema";
 
@@ -41,7 +41,8 @@ export async function createWeighingAction(formData: FormData) {
 }
 
 export async function deleteWeighingAction(formData: FormData) {
-  const session = await farmSession();
+  const session = await requireAdmin();
+  if (!session.farmId) return;
   const weighingId = str(formData.get("weighingId"));
   const animalId = str(formData.get("animalId"));
   if (!weighingId) return;

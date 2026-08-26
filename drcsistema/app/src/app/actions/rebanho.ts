@@ -2,10 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { eq, and, sql } from "drizzle-orm";
-import { requireSession } from "@/lib/session";
+import { eq, and, or, sql } from "drizzle-orm";
+import { requireSession, requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { animals, lots, breeds, mortalityEvents, weighings } from "@/db/schema";
+import { animals, lots, breeds, mortalityEvents, weighings, reproductionEvents } from "@/db/schema";
 
 async function farmSession() {
   const session = await requireSession();
@@ -239,4 +239,63 @@ export async function reactivateAnimalAction(formData: FormData) {
 
   revalidatePath("/rebanho");
   revalidatePath(`/rebanho/animais/${animalId}`);
+}
+
+// ---------- Exclusão de dados ----------
+/** Exclui um lote definitivamente. Animais vinculados ficam sem lote (não são excluídos). */
+export async function deleteLotAction(formData: FormData) {
+  const session = await requireAdmin();
+  if (!session.farmId) return;
+  const lotId = str(formData.get("lotId"));
+  if (!lotId) return;
+
+  await db.delete(lots).where(and(eq(lots.id, lotId), eq(lots.farmId, session.farmId)));
+  revalidatePath("/rebanho");
+}
+
+/**
+ * Exclusão definitiva do animal. Bloqueada se ele for pai/mãe de outro animal já
+ * cadastrado ou aparecer em algum evento de reprodução — nesses casos o histórico
+ * depende dele, então a pessoa é levada de volta à ficha do animal com uma
+ * explicação. Para um animal que morreu ou saiu do rebanho, "Registrar óbito" é o
+ * caminho certo, não excluir.
+ */
+export async function deleteAnimalAction(formData: FormData) {
+  const session = await requireAdmin();
+  if (!session.farmId) return;
+  const animalId = str(formData.get("animalId"));
+  if (!animalId) return;
+
+  const animal = await db.query.animals.findFirst({
+    where: and(eq(animals.id, animalId), eq(animals.farmId, session.farmId)),
+  });
+  if (!animal) return;
+
+  const [parentOf, reproLink] = await Promise.all([
+    db.query.animals.findFirst({
+      where: and(
+        eq(animals.farmId, session.farmId),
+        or(eq(animals.motherId, animalId), eq(animals.fatherId, animalId))
+      ),
+    }),
+    db.query.reproductionEvents.findFirst({
+      where: and(
+        eq(reproductionEvents.farmId, session.farmId),
+        or(
+          eq(reproductionEvents.motherId, animalId),
+          eq(reproductionEvents.fatherId, animalId),
+          eq(reproductionEvents.offspringAnimalId, animalId)
+        )
+      ),
+    }),
+  ]);
+
+  if (parentOf || reproLink) {
+    redirect(`/rebanho/animais/${animalId}?deleteError=vinculado`);
+  }
+
+  await db.delete(animals).where(and(eq(animals.id, animalId), eq(animals.farmId, session.farmId)));
+
+  revalidatePath("/rebanho");
+  redirect("/rebanho");
 }

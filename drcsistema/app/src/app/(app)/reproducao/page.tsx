@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { reproductionEvents, animals } from "@/db/schema";
 import { PageHeader, Card, Badge, EmptyState } from "@/components/ui";
 import { deleteReproductionEventAction } from "@/app/actions/reproducao";
+import { ConfirmForm } from "@/components/confirm-form";
 
 const EVENT_LABEL: Record<string, string> = {
   cobertura: "Cobertura",
@@ -27,6 +28,7 @@ export default async function ReproducaoPage() {
     return <EmptyState>Sua conta ainda não está vinculada a uma fazenda.</EmptyState>;
   }
   const farmId = session.farmId;
+  const isAdmin = session.role === "admin";
 
   const [events, poAnimals] = await Promise.all([
     db.query.reproductionEvents.findMany({
@@ -104,15 +106,20 @@ export default async function ReproducaoPage() {
                           Cadastrar filhote
                         </Link>
                       )}
-                      <form action={deleteReproductionEventAction}>
-                        <input type="hidden" name="eventId" value={ev.id} />
-                        <button
-                          type="submit"
-                          className="text-xs font-medium text-red-600 underline underline-offset-2"
+                      {isAdmin && (
+                        <ConfirmForm
+                          action={deleteReproductionEventAction}
+                          confirmMessage="Excluir este evento reprodutivo? Esta ação não pode ser desfeita."
                         >
-                          Excluir
-                        </button>
-                      </form>
+                          <input type="hidden" name="eventId" value={ev.id} />
+                          <button
+                            type="submit"
+                            className="text-xs font-medium text-red-600 underline underline-offset-2"
+                          >
+                            Excluir
+                          </button>
+                        </ConfirmForm>
+                      )}
                     </div>
                   </td>
                 </tr>

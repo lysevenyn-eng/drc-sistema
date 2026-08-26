@@ -4,7 +4,14 @@ import { requireSession } from "@/lib/session";
 import { db } from "@/db";
 import { lots, animals, breeds } from "@/db/schema";
 import { PageHeader, Card, Badge, EmptyState } from "@/components/ui";
-import { createBreedAction, updateLotStatusAction } from "@/app/actions/rebanho";
+import {
+  createBreedAction,
+  updateLotStatusAction,
+  deleteLotAction,
+  deleteAnimalAction,
+} from "@/app/actions/rebanho";
+import { ConfirmForm } from "@/components/confirm-form";
+import { overallGpd, formatGpd } from "@/lib/gpd";
 
 const STATUS_TONE = { ativo: "green", vendido: "gold", morto: "red" } as const;
 const STATUS_LABEL = { ativo: "Ativo", vendido: "Vendido", morto: "Morto" } as const;
@@ -13,6 +20,7 @@ export default async function RebanhoPage() {
   const session = await requireSession();
   if (!session.farmId) return <EmptyState>Sua conta ainda não está vinculada a uma fazenda.</EmptyState>;
   const farmId = session.farmId;
+  const isAdmin = session.role === "admin";
 
   const [farmLots, farmAnimals, farmBreeds] = await Promise.all([
     db.query.lots.findMany({
@@ -22,7 +30,11 @@ export default async function RebanhoPage() {
     }),
     db.query.animals.findMany({
       where: eq(animals.farmId, farmId),
-      with: { breed: true, lot: true },
+      with: {
+        breed: true,
+        lot: true,
+        weighings: { columns: { id: true, weightKg: true, weighedAt: true } },
+      },
       orderBy: (a, { desc }) => [desc(a.createdAt)],
     }),
     db.query.breeds.findMany({
@@ -83,20 +95,42 @@ export default async function RebanhoPage() {
                     </Badge>
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <form action={updateLotStatusAction}>
-                      <input type="hidden" name="lotId" value={lot.id} />
-                      <input
-                        type="hidden"
-                        name="status"
-                        value={lot.status === "ativo" ? "encerrado" : "ativo"}
-                      />
-                      <button
-                        type="submit"
+                    <div className="flex flex-col items-end gap-1.5">
+                      <form action={updateLotStatusAction}>
+                        <input type="hidden" name="lotId" value={lot.id} />
+                        <input
+                          type="hidden"
+                          name="status"
+                          value={lot.status === "ativo" ? "encerrado" : "ativo"}
+                        />
+                        <button
+                          type="submit"
+                          className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                        >
+                          {lot.status === "ativo" ? "Encerrar" : "Reativar"}
+                        </button>
+                      </form>
+                      <Link
+                        href={`/manejo/novo?lotId=${lot.id}`}
                         className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
                       >
-                        {lot.status === "ativo" ? "Encerrar" : "Reativar"}
-                      </button>
-                    </form>
+                        + Tarefa
+                      </Link>
+                      {isAdmin && (
+                        <ConfirmForm
+                          action={deleteLotAction}
+                          confirmMessage={`Excluir o lote "${lot.name}"? Os animais vinculados ficam sem lote (não são excluídos), mas as tarefas de manejo agendadas para este lote serão excluídas junto. Esta ação não pode ser desfeita.`}
+                        >
+                          <input type="hidden" name="lotId" value={lot.id} />
+                          <button
+                            type="submit"
+                            className="text-xs font-medium text-red-600 underline underline-offset-2"
+                          >
+                            Excluir
+                          </button>
+                        </ConfirmForm>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -120,7 +154,7 @@ export default async function RebanhoPage() {
         {farmAnimals.length === 0 ? (
           <EmptyState>Nenhum animal cadastrado ainda.</EmptyState>
         ) : (
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[860px] text-sm">
             <thead>
               <tr className="border-b border-drc-border text-left text-xs uppercase tracking-wide text-drc-green-900/60">
                 <th className="px-4 py-2.5">Brinco</th>
@@ -129,6 +163,7 @@ export default async function RebanhoPage() {
                 <th className="px-4 py-2.5">Sexo</th>
                 <th className="px-4 py-2.5">P.O.</th>
                 <th className="px-4 py-2.5">Lote</th>
+                <th className="px-4 py-2.5">GPD</th>
                 <th className="px-4 py-2.5">Status</th>
                 <th className="px-4 py-2.5" />
               </tr>
@@ -142,16 +177,35 @@ export default async function RebanhoPage() {
                   <td className="px-4 py-2.5 capitalize text-drc-green-900/80">{a.sex}</td>
                   <td className="px-4 py-2.5">{a.isPO ? <Badge tone="gold">P.O.</Badge> : "—"}</td>
                   <td className="px-4 py-2.5 text-drc-green-900/80">{a.lot?.name ?? "—"}</td>
+                  <td className="px-4 py-2.5 whitespace-nowrap text-drc-green-900/80">
+                    {formatGpd(overallGpd(a.weighings))}
+                  </td>
                   <td className="px-4 py-2.5">
                     <Badge tone={STATUS_TONE[a.status]}>{STATUS_LABEL[a.status]}</Badge>
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <Link
-                      href={`/rebanho/animais/${a.id}`}
-                      className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
-                    >
-                      Ver / editar
-                    </Link>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <Link
+                        href={`/rebanho/animais/${a.id}`}
+                        className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                      >
+                        Ver / editar
+                      </Link>
+                      {isAdmin && (
+                        <ConfirmForm
+                          action={deleteAnimalAction}
+                          confirmMessage={`Excluir "${a.tag}" definitivamente? As pesagens e tarefas vinculadas também serão excluídas. Esta ação não pode ser desfeita.`}
+                        >
+                          <input type="hidden" name="animalId" value={a.id} />
+                          <button
+                            type="submit"
+                            className="text-xs font-medium text-red-600 underline underline-offset-2"
+                          >
+                            Excluir
+                          </button>
+                        </ConfirmForm>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

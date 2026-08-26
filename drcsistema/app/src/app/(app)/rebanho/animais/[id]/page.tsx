@@ -3,15 +3,30 @@ import { and, eq, ne } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
-import { breeds, lots, animals, mortalityEvents, reproductionEvents, weighings } from "@/db/schema";
+import {
+  breeds,
+  lots,
+  animals,
+  mortalityEvents,
+  reproductionEvents,
+  weighings,
+  managementTasks,
+} from "@/db/schema";
 import { PageHeader, Card, Badge } from "@/components/ui";
 import {
   updateAnimalAction,
   registerDeathAction,
   reactivateAnimalAction,
+  deleteAnimalAction,
 } from "@/app/actions/rebanho";
 import { deleteWeighingAction } from "@/app/actions/pesagem";
+import {
+  completeManagementTaskAction,
+  reopenManagementTaskAction,
+  deleteManagementTaskAction,
+} from "@/app/actions/manejo";
 import { computeGpdSeries, overallGpd, formatGpd } from "@/lib/gpd";
+import { ConfirmForm } from "@/components/confirm-form";
 
 const EVENT_LABEL: Record<string, string> = {
   cobertura: "Cobertura",
@@ -21,22 +36,34 @@ const EVENT_LABEL: Record<string, string> = {
   obito: "Óbito",
 };
 
+const TASK_TYPE_LABEL: Record<string, string> = {
+  vacina: "Vacina",
+  vermifugo: "Vermífugo",
+  medicamento: "Medicamento",
+  casqueamento: "Casqueamento",
+  outro: "Outro",
+};
+
 export default async function AnimalDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ deleteError?: string }>;
 }) {
   const { id } = await params;
+  const { deleteError } = await searchParams;
   const session = await requireSession();
   if (!session.farmId) notFound();
   const farmId = session.farmId;
+  const isAdmin = session.role === "admin";
 
   const animal = await db.query.animals.findFirst({
     where: and(eq(animals.id, id), eq(animals.farmId, farmId)),
   });
   if (!animal) notFound();
 
-  const [farmBreeds, activeLots, mothers, fathers, deaths, reproHistory, weighHistory] = await Promise.all([
+  const [farmBreeds, activeLots, mothers, fathers, deaths, reproHistory, weighHistory, tasks] = await Promise.all([
     db.query.breeds.findMany({ where: eq(breeds.farmId, farmId), orderBy: (b, { asc }) => [asc(b.name)] }),
     db.query.lots.findMany({ where: and(eq(lots.farmId, farmId), eq(lots.status, "ativo")) }),
     db.query.animals.findMany({
@@ -69,6 +96,10 @@ export default async function AnimalDetailPage({
       where: eq(weighings.animalId, id),
       orderBy: (w, { desc }) => [desc(w.weighedAt)],
     }),
+    db.query.managementTasks.findMany({
+      where: eq(managementTasks.animalId, id),
+      orderBy: (t, { desc }) => [desc(t.scheduledDate)],
+    }),
   ]);
 
   const weighGpdById = computeGpdSeries(weighHistory);
@@ -89,6 +120,14 @@ export default async function AnimalDetailPage({
           </Badge>
         }
       />
+
+      {deleteError === "vinculado" && (
+        <Card className="mb-4 border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          Não foi possível excluir: este animal é referenciado como pai/mãe de outro animal
+          cadastrado ou aparece em algum evento de reprodução. Para tirá-lo do rebanho, use
+          &quot;Registrar óbito&quot; ao lado — o histórico é preservado.
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="p-5 lg:col-span-2">
@@ -231,6 +270,27 @@ export default async function AnimalDetailPage({
                 </form>
               </div>
             )}
+
+            {isAdmin && (
+              <div className="mt-4 border-t border-drc-border/60 pt-4">
+                <ConfirmForm
+                  action={deleteAnimalAction}
+                  confirmMessage={`Excluir "${animal.tag}" definitivamente? As pesagens e tarefas de manejo vinculadas também serão excluídas. Esta ação não pode ser desfeita.`}
+                >
+                  <input type="hidden" name="animalId" value={animal.id} />
+                  <button
+                    type="submit"
+                    className="w-full rounded-lg border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50"
+                  >
+                    Excluir animal
+                  </button>
+                </ConfirmForm>
+                <p className="mt-1.5 text-xs text-drc-green-900/50">
+                  Bloqueado se o animal for pai/mãe de outro já cadastrado ou aparecer em um
+                  evento de reprodução.
+                </p>
+              </div>
+            )}
           </Card>
 
           <Card className="p-5">
@@ -270,20 +330,107 @@ export default async function AnimalDetailPage({
                           {w.notes ? ` — ${w.notes}` : ""}
                         </p>
                       </div>
-                      <form action={deleteWeighingAction}>
-                        <input type="hidden" name="weighingId" value={w.id} />
-                        <input type="hidden" name="animalId" value={animal.id} />
-                        <button
-                          type="submit"
-                          className="text-xs font-medium text-red-600 underline underline-offset-2"
+                      {isAdmin && (
+                        <ConfirmForm
+                          action={deleteWeighingAction}
+                          confirmMessage="Excluir esta pesagem? Esta ação não pode ser desfeita."
                         >
-                          Excluir
-                        </button>
-                      </form>
+                          <input type="hidden" name="weighingId" value={w.id} />
+                          <input type="hidden" name="animalId" value={animal.id} />
+                          <button
+                            type="submit"
+                            className="text-xs font-medium text-red-600 underline underline-offset-2"
+                          >
+                            Excluir
+                          </button>
+                        </ConfirmForm>
+                      )}
                     </li>
                   ))}
                 </ul>
               </>
+            )}
+          </Card>
+
+          <Card className="p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-drc-green-950">Manejo</h2>
+              <Link
+                href={`/manejo/novo?animalId=${animal.id}`}
+                className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+              >
+                + Nova tarefa
+              </Link>
+            </div>
+            {tasks.length === 0 ? (
+              <p className="text-sm text-drc-green-900/60">Nenhuma tarefa registrada ainda.</p>
+            ) : (
+              <ul className="space-y-2 text-sm text-drc-green-900/80">
+                {tasks.map((t) => (
+                  <li
+                    key={t.id}
+                    className="flex items-start justify-between gap-2 border-b border-drc-border/60 pb-2 last:border-0"
+                  >
+                    <div>
+                      <p className="flex items-center gap-2 font-medium text-drc-green-950">
+                        {TASK_TYPE_LABEL[t.type] ?? t.type}
+                        <Badge tone={t.completedDate ? "green" : "gold"}>
+                          {t.completedDate ? "Concluída" : "Pendente"}
+                        </Badge>
+                      </p>
+                      <p className="text-xs text-drc-green-900/50">
+                        {(t.product || t.dose) &&
+                          `${t.product ?? ""}${t.product && t.dose ? " — " : ""}${t.dose ?? ""} · `}
+                        {new Date(t.scheduledDate).toLocaleDateString("pt-BR")}
+                        {t.completedDate
+                          ? ` · concluída em ${new Date(t.completedDate).toLocaleDateString("pt-BR")}`
+                          : ""}
+                      </p>
+                      {t.notes && <p className="text-xs text-drc-green-900/50">{t.notes}</p>}
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      {t.completedDate ? (
+                        <form action={reopenManagementTaskAction}>
+                          <input type="hidden" name="taskId" value={t.id} />
+                          <input type="hidden" name="animalId" value={animal.id} />
+                          <button
+                            type="submit"
+                            className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                          >
+                            Reabrir
+                          </button>
+                        </form>
+                      ) : (
+                        <form action={completeManagementTaskAction}>
+                          <input type="hidden" name="taskId" value={t.id} />
+                          <input type="hidden" name="animalId" value={animal.id} />
+                          <button
+                            type="submit"
+                            className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                          >
+                            Concluir
+                          </button>
+                        </form>
+                      )}
+                      {isAdmin && (
+                        <ConfirmForm
+                          action={deleteManagementTaskAction}
+                          confirmMessage="Excluir esta tarefa de manejo? Esta ação não pode ser desfeita."
+                        >
+                          <input type="hidden" name="taskId" value={t.id} />
+                          <input type="hidden" name="animalId" value={animal.id} />
+                          <button
+                            type="submit"
+                            className="text-xs font-medium text-red-600 underline underline-offset-2"
+                          >
+                            Excluir
+                          </button>
+                        </ConfirmForm>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
             )}
           </Card>
 

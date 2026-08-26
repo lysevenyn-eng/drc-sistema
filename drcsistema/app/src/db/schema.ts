@@ -122,11 +122,12 @@ export const animals = pgTable(
   (t) => [uniqueIndex("animals_farm_tag_idx").on(t.farmId, t.tag)]
 );
 
-export const animalsRelations = relations(animals, ({ one }) => ({
+export const animalsRelations = relations(animals, ({ one, many }) => ({
   father: one(animals, { fields: [animals.fatherId], references: [animals.id], relationName: "father" }),
   mother: one(animals, { fields: [animals.motherId], references: [animals.id], relationName: "mother" }),
   lot: one(lots, { fields: [animals.lotId], references: [lots.id] }),
   breed: one(breeds, { fields: [animals.breedId], references: [breeds.id] }),
+  weighings: many(weighings),
 }));
 
 export const lotsRelations = relations(lots, ({ one }) => ({
@@ -206,6 +207,11 @@ export const managementTasks = pgTable("management_tasks", {
   updatedBy: text("updated_by").references(() => users.id),
   ...timestamps,
 });
+
+export const managementTasksRelations = relations(managementTasks, ({ one }) => ({
+  animal: one(animals, { fields: [managementTasks.animalId], references: [animals.id] }),
+  lot: one(lots, { fields: [managementTasks.lotId], references: [lots.id] }),
+}));
 
 // ---------- Compras ----------
 export const purchases = pgTable("purchases", {
