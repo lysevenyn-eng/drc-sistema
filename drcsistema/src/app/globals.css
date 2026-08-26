@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f5efe3;
+  --foreground: #1c2620;
+
+  --drc-green-950: #031c16;
+  --drc-green-900: #0a2a21;
+  --drc-green-800: #123b2f;
+  --drc-green-700: #1c4f3f;
+  --drc-gold-500: #f6b412;
+  --drc-gold-400: #fbcb4a;
+  --drc-cream-50: #fbf8f2;
+  --drc-cream-100: #f5efe3;
+  --drc-cream-200: #ece2cd;
+  --drc-border: #ddd0b0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --color-drc-green-950: var(--drc-green-950);
+  --color-drc-green-900: var(--drc-green-900);
+  --color-drc-green-800: var(--drc-green-800);
+  --color-drc-green-700: var(--drc-green-700);
+  --color-drc-gold-500: var(--drc-gold-500);
+  --color-drc-gold-400: var(--drc-gold-400);
+  --color-drc-cream-50: var(--drc-cream-50);
+  --color-drc-cream-100: var(--drc-cream-100);
+  --color-drc-cream-200: var(--drc-cream-200);
+  --color-drc-border: var(--drc-border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: var(--drc-gold-400);
+  color: var(--drc-green-950);
+}
