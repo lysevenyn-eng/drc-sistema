@@ -3,7 +3,16 @@
 import { useState } from "react";
 
 type LotOption = { id: string; name: string; quantity: number };
-type AnimalOption = { id: string; tag: string; name: string | null };
+type AnimalOption = {
+  id: string;
+  tag: string;
+  name: string | null;
+  lot: { name: string } | null;
+  breedName: string | null;
+  birthDate: string | Date | null;
+  purchaseDate: string | Date | null;
+  latestWeightKg: number | null;
+};
 
 const SALE_MODE_LABELS: Record<string, string> = {
   vivo_cabeca: "Vivo — por cabeça",
@@ -11,6 +20,25 @@ const SALE_MODE_LABELS: Record<string, string> = {
   carcaca: "Carcaça",
   outra: "Outra",
 };
+
+// O lote se mistura com o tempo e não dá pra confiar nele pra identificar um
+// animal na hora da venda — por isso o rótulo reúne raça, peso e a data em
+// que o animal entrou na fazenda (compra ou nascimento, o que tiver), que não
+// mudam com a mistura. O lote ainda aparece por último, quando existir.
+function animalOptionLabel(a: AnimalOption) {
+  const parts = [`${a.tag}${a.name ? ` — ${a.name}` : ""}`];
+  parts.push(a.breedName ?? "raça não informada");
+  parts.push(a.latestWeightKg != null ? `${a.latestWeightKg} kg` : "peso não registrado");
+  if (a.purchaseDate) {
+    parts.push(`comprado ${new Date(a.purchaseDate).toLocaleDateString("pt-BR")}`);
+  } else if (a.birthDate) {
+    parts.push(`nasceu ${new Date(a.birthDate).toLocaleDateString("pt-BR")}`);
+  } else {
+    parts.push("data de entrada não registrada");
+  }
+  if (a.lot) parts.push(`Lote: ${a.lot.name}`);
+  return parts.join(" · ");
+}
 
 export function VendaForm({
   lots,
@@ -25,12 +53,32 @@ export function VendaForm({
   const [saleMode, setSaleMode] = useState<"vivo_cabeca" | "vivo_peso" | "carcaca" | "outra">("vivo_cabeca");
   const [liveWeight, setLiveWeight] = useState("");
   const [carcassWeight, setCarcassWeight] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [totalValue, setTotalValue] = useState("");
+  const [pricePerHead, setPricePerHead] = useState("");
+  const [pricePerKg, setPricePerKg] = useState("");
   const today = new Date().toISOString().slice(0, 10);
 
   const liveWeightNum = Number(liveWeight);
   const carcassWeightNum = Number(carcassWeight);
   const rendimento =
     liveWeightNum > 0 && carcassWeightNum > 0 ? (carcassWeightNum / liveWeightNum) * 100 : null;
+
+  // Ajudantes opcionais que preenchem "Valor total" automaticamente — o campo
+  // continua editável depois, caso o valor combinado seja outro.
+  const quantityNum = saleKind === "lote" ? Number(quantity) || 0 : 1;
+
+  function applyPricePerHead(value: string) {
+    setPricePerHead(value);
+    const n = Number(value);
+    if (n > 0 && quantityNum > 0) setTotalValue((n * quantityNum).toFixed(2));
+  }
+
+  function applyPricePerKg(value: string) {
+    setPricePerKg(value);
+    const n = Number(value);
+    if (n > 0 && liveWeightNum > 0) setTotalValue((n * liveWeightNum).toFixed(2));
+  }
 
   return (
     <form action={action} className="space-y-4">
@@ -74,7 +122,15 @@ export function VendaForm({
             </select>
           </Field>
           <Field label="Quantidade vendida">
-            <input name="quantity" type="number" min={1} required className={inputClass} />
+            <input
+              name="quantity"
+              type="number"
+              min={1}
+              required
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              className={inputClass}
+            />
           </Field>
         </div>
       ) : (
@@ -85,11 +141,15 @@ export function VendaForm({
             </option>
             {animals.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.tag}
-                {a.name ? ` — ${a.name}` : ""}
+                {animalOptionLabel(a)}
               </option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-drc-green-900/60">
+            Cada animal mostra raça, último peso registrado e data de entrada na fazenda (compra
+            ou nascimento) — como o lote se mistura com o tempo, essas informações ajudam mais a
+            identificar o animal certo do que o nome do lote sozinho.
+          </p>
         </Field>
       )}
 
@@ -110,9 +170,65 @@ export function VendaForm({
           </select>
         </Field>
         <Field label="Valor total (R$)">
-          <input name="totalValue" type="number" min={0} step="0.01" required className={inputClass} />
+          <input
+            name="totalValue"
+            type="number"
+            min={0}
+            step="0.01"
+            required
+            value={totalValue}
+            onChange={(e) => setTotalValue(e.target.value)}
+            className={inputClass}
+          />
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-drc-green-900/60">
+            <span>ou preço por cabeça:</span>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={pricePerHead}
+              onChange={(e) => applyPricePerHead(e.target.value)}
+              placeholder="R$"
+              className="w-20 rounded border border-drc-border bg-white px-1.5 py-1 text-xs text-drc-green-950 outline-none focus:border-drc-green-700"
+            />
+            <span>
+              × {quantityNum || 0} cabeça{quantityNum === 1 ? "" : "s"} preenche o valor total acima.
+            </span>
+          </div>
         </Field>
       </div>
+
+      {saleMode === "vivo_peso" && (
+        <div className="rounded-lg border border-drc-border bg-drc-green-950/5 p-3">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Peso vendido (kg)">
+              <input
+                name="liveWeightKg"
+                type="number"
+                min={0}
+                step="0.1"
+                value={liveWeight}
+                onChange={(e) => setLiveWeight(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Preço por kg (R$, opcional)">
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={pricePerKg}
+                onChange={(e) => applyPricePerKg(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <p className="mt-2 text-xs text-drc-green-900/60">
+            Preenchendo peso e preço por kg, o valor total acima é calculado automaticamente (dá
+            pra ajustar depois).
+          </p>
+        </div>
+      )}
 
       {saleMode === "carcaca" && (
         <div className="rounded-lg border border-drc-border bg-drc-green-950/5 p-3">

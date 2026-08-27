@@ -15,6 +15,7 @@ import {
   IconFinance,
   IconWallet,
   IconAdmin,
+  IconReport,
   IconMenu,
   IconClose,
   IconLogout,
@@ -24,12 +25,19 @@ import {
 
 const SIDEBAR_COLLAPSED_KEY = "drc-sidebar-collapsed";
 
+const ROLE_LABEL: Record<string, string> = {
+  admin: "Administrador",
+  criador: "Criador",
+  caseiro: "Caseiro",
+};
+
 const NAV = [
   { href: "/dashboard", label: "Visão geral", Icon: IconDashboard, adminOnly: false },
   { href: "/rebanho", label: "Rebanho", Icon: IconHerd, adminOnly: false },
   { href: "/reproducao", label: "Reprodução e P.O.", Icon: IconRepro, adminOnly: false },
   { href: "/pesagem", label: "Pesagem", Icon: IconScale, adminOnly: false },
   { href: "/manejo", label: "Manejo e calendário", Icon: IconTasks, adminOnly: false },
+  { href: "/relatorios", label: "Relatórios", Icon: IconReport, adminOnly: false },
   { href: "/compras-vendas", label: "Compras e vendas", Icon: IconTrade, adminOnly: true },
   { href: "/financeiro", label: "Financeiro", Icon: IconFinance, adminOnly: true },
   { href: "/carteira", label: "Carteira", Icon: IconWallet, adminOnly: true },
@@ -116,7 +124,7 @@ export function AppShell({
 }: {
   children: React.ReactNode;
   userName: string;
-  role: "admin" | "criador";
+  role: "admin" | "criador" | "caseiro";
   farmName: string;
 }) {
   const pathname = usePathname();
@@ -177,7 +185,7 @@ export function AppShell({
             <>
               <p className="truncate text-sm font-medium text-white">{userName}</p>
               <p className="text-xs uppercase tracking-wide text-drc-gold-400">
-                {role === "admin" ? "Administrador" : "Criador"}
+                {ROLE_LABEL[role] ?? role}
               </p>
             </>
           )}
@@ -236,7 +244,7 @@ export function AppShell({
             <div className="mt-4 border-t border-white/10 px-4 pt-4">
               <p className="truncate text-sm font-medium text-white">{userName}</p>
               <p className="text-xs uppercase tracking-wide text-drc-gold-400">
-                {role === "admin" ? "Administrador" : "Criador"}
+                {ROLE_LABEL[role] ?? role}
               </p>
               <form action={logoutAction} className="mt-3">
                 <button type="submit" className="flex items-center gap-2 text-sm text-drc-cream-100/70">

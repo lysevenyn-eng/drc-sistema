@@ -19,7 +19,7 @@ const optStr = (v: FormDataEntryValue | null) => {
   return s.length ? s : null;
 };
 
-type TaskType = "vacina" | "vermifugo" | "medicamento" | "casqueamento" | "outro";
+type TaskType = "vacina" | "vermifugo" | "medicamento" | "casqueamento" | "desmame" | "pesagem" | "outro";
 type TargetType = "animal" | "lote";
 
 export async function createManagementTaskAction(formData: FormData) {

@@ -17,7 +17,7 @@ const timestamps = {
 };
 
 // ---------- Enums ----------
-export const roleEnum = pgEnum("role", ["admin", "criador"]);
+export const roleEnum = pgEnum("role", ["admin", "criador", "caseiro"]);
 export const userStatusEnum = pgEnum("user_status", ["pendente", "aprovado", "rejeitado"]);
 export const sexEnum = pgEnum("sex", ["macho", "femea"]);
 export const compositionEnum = pgEnum("composition", ["macho", "femea", "misto"]);
@@ -35,6 +35,8 @@ export const taskTypeEnum = pgEnum("task_type", [
   "vermifugo",
   "medicamento",
   "casqueamento",
+  "desmame",
+  "pesagem",
   "outro",
 ]);
 export const taskTargetEnum = pgEnum("task_target", ["animal", "lote"]);
@@ -45,6 +47,11 @@ export const expenseCategoryEnum = pgEnum("expense_category", [
   "alimentacao",
   "frete",
   "outras",
+]);
+export const breedingMethodEnum = pgEnum("breeding_method", [
+  "monta_natural",
+  "inseminacao_artificial",
+  "transferencia_embriao",
 ]);
 export const saleTypeEnum = pgEnum("sale_type", ["lote", "individual"]);
 export const saleModeEnum = pgEnum("sale_mode", ["vivo_cabeca", "vivo_peso", "carcaca", "outra"]);
@@ -95,6 +102,11 @@ export const lots = pgTable("lots", {
   composition: compositionEnum("composition").notNull().default("misto"),
   quantity: integer("quantity").notNull().default(0),
   costPerHead: numeric("cost_per_head", { precision: 12, scale: 2, mode: "number" }),
+  // Peso médio por cabeça (kg) — alimentado por compras que informam peso (média
+  // ponderada, igual costPerHead) e/ou atualizado manualmente (ex.: depois de
+  // pesar uma amostra do lote). Animais de lote não são cadastrados individualmente,
+  // então não têm pesagem própria — este é o único jeito de acompanhar peso do lote.
+  avgWeightKg: numeric("avg_weight_kg", { precision: 6, scale: 2, mode: "number" }),
   status: lotStatusEnum("status").notNull().default("ativo"),
   notes: text("notes"),
   updatedBy: text("updated_by").references(() => users.id),
@@ -113,6 +125,14 @@ export const animals = pgTable(
     isPO: boolean("is_po").notNull().default(false),
     pedigreeNumber: text("pedigree_number"),
     fatherId: text("father_id"),
+    // Reprodutor externo (sêmen de fora, ex.: I.A. com touro que não é da
+    // fazenda) — alternativa a fatherId quando não há um animal cadastrado
+    // pra apontar. Os dois são preenchidos pelo mesmo campo no formulário
+    // (FatherField), nunca os dois juntos. Mesmo padrão em reproductionEvents.
+    externalFatherName: text("external_father_name"),
+    // Método de concepção deste animal (monta natural x inseminação artificial),
+    // opcional/histórico — nulo = não informado. Ver mesmo campo em reproductionEvents.
+    breedingMethod: breedingMethodEnum("breeding_method"),
     motherId: text("mother_id"),
     lotId: text("lot_id").references(() => lots.id, { onDelete: "set null" }),
     status: animalStatusEnum("status").notNull().default("ativo"),
@@ -149,6 +169,20 @@ export const reproductionEvents = pgTable("reproduction_events", {
   farmId: text("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
   motherId: text("mother_id").notNull().references(() => animals.id),
   fatherId: text("father_id").references(() => animals.id),
+  // Reprodutor externo (sêmen de fora) — preenchido no lugar de fatherId quando
+  // o pai não é um animal cadastrado na fazenda (comum em I.A. com sêmen
+  // comprado). Nunca os dois juntos; ver FatherField (componente do form).
+  externalFatherName: text("external_father_name"),
+  // Só relevante em eventType = "cobertura": como a cobertura foi feita.
+  // Nulo = não informado (eventos antigos, antes deste campo existir).
+  breedingMethod: breedingMethodEnum("breeding_method"),
+  // Só relevante quando breedingMethod = "transferencia_embriao": motherId
+  // continua sendo a receptora (quem carrega e pare a cria — não muda nada
+  // no resto do sistema). donorMotherId/externalDonorName guardam a mãe
+  // genética (doadora do embrião), separadamente. Mesmo padrão cadastrado x
+  // externo do fatherId/externalFatherName, ver DonorMotherField.
+  donorMotherId: text("donor_mother_id").references(() => animals.id),
+  externalDonorName: text("external_donor_name"),
   eventType: reproEventTypeEnum("event_type").notNull(),
   eventDate: timestamp("event_date", { withTimezone: true }).notNull().defaultNow(),
   // Parto: total de filhotes e quantos nasceram vivos (a diferença = natimortos).
@@ -156,6 +190,14 @@ export const reproductionEvents = pgTable("reproduction_events", {
   liveCount: integer("live_count"),
   // Diagnóstico de gestação: resultado (true = positivo, false = negativo).
   pregnant: boolean("pregnant"),
+  // Diagnóstico de gestação (só quando pregnant = true): nº de fetos, se já souber
+  // (ex.: ultrassom) — >=2 marca "gemelar" no relatório de reprodução, antes mesmo
+  // do parto confirmar (que também marca gemelar sozinho, via offspringCount).
+  fetusCount: integer("fetus_count"),
+  // Só em eventos do tipo "cobertura": marca que esse ciclo foi encerrado sem
+  // diagnóstico/parto/óbito (ex.: matriz vendida, desistiu de acompanhar) — tira
+  // a cobertura da lista de "aguardando resultado" no relatório de reprodução.
+  closedWithoutResult: boolean("closed_without_result").notNull().default(false),
   // Desmame (e opcionalmente outros eventos): qual filhote já cadastrado o evento se refere.
   offspringAnimalId: text("offspring_animal_id").references(() => animals.id, {
     onDelete: "set null",
@@ -175,6 +217,11 @@ export const reproductionEventsRelations = relations(reproductionEvents, ({ one 
     fields: [reproductionEvents.fatherId],
     references: [animals.id],
     relationName: "reproFather",
+  }),
+  donorMother: one(animals, {
+    fields: [reproductionEvents.donorMotherId],
+    references: [animals.id],
+    relationName: "reproDonorMother",
   }),
   offspringAnimal: one(animals, {
     fields: [reproductionEvents.offspringAnimalId],
@@ -258,6 +305,9 @@ export const purchases = pgTable("purchases", {
   breedId: text("breed_id").references(() => breeds.id),
   composition: compositionEnum("composition").notNull().default("misto"),
   totalValue: numeric("total_value", { precision: 12, scale: 2, mode: "number" }).notNull(),
+  // Peso total (kg) da compra por lote, opcional — usado pra entrar na média
+  // ponderada de lots.avgWeightKg, mesmo padrão de totalValue/costPerHead.
+  totalWeightKg: numeric("total_weight_kg", { precision: 8, scale: 2, mode: "number" }),
   purchaseDate: timestamp("purchase_date", { withTimezone: true }).notNull().defaultNow(),
   updatedBy: text("updated_by").references(() => users.id),
   ...timestamps,
@@ -326,10 +376,11 @@ export const sales = pgTable("sales", {
   totalValue: numeric("total_value", { precision: 12, scale: 2, mode: "number" }).notNull(),
   costBasis: numeric("cost_basis", { precision: 12, scale: 2, mode: "number" }),
   profit: numeric("profit", { precision: 12, scale: 2, mode: "number" }),
-  // Só usados quando saleMode = "carcaca" — peso vivo (antes do abate) e peso
-  // da carcaça (depois), pra calcular o rendimento de carcaça (carcaça ÷ vivo).
-  // Guardados como dois pesos em vez de já salvar o percentual pronto, pra não
-  // duplicar dado nem correr risco de o percentual ficar desatualizado.
+  // liveWeightKg: peso vivo (kg) — em saleMode "carcaca", o peso antes do abate
+  // (junto com carcassWeightKg, pra calcular o rendimento carcaça ÷ vivo); em
+  // saleMode "vivo_peso", o peso vendido (usado pra calcular o valor por kg no
+  // formulário). Guardados como pesos brutos, não o percentual/preço já pronto,
+  // pra não duplicar dado nem correr risco de ficar desatualizado.
   liveWeightKg: numeric("live_weight_kg", { precision: 6, scale: 2, mode: "number" }),
   carcassWeightKg: numeric("carcass_weight_kg", { precision: 6, scale: 2, mode: "number" }),
   saleDate: timestamp("sale_date", { withTimezone: true }).notNull().defaultNow(),

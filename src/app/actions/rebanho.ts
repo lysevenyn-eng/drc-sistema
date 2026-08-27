@@ -70,6 +70,25 @@ export async function updateLotStatusAction(formData: FormData) {
   revalidatePath("/rebanho");
 }
 
+/**
+ * Atualização manual do peso médio do lote — ex.: depois de pesar uma amostra
+ * numa balança de lote. Sobrescreve direto, sem cálculo (mesmo padrão do
+ * saldo manual da Carteira) — complementa a média ponderada que já acontece
+ * automaticamente quando uma compra por lote informa peso.
+ */
+export async function updateLotAvgWeightAction(formData: FormData) {
+  const session = await farmSession();
+  const lotId = str(formData.get("lotId"));
+  if (!lotId) return;
+
+  await db
+    .update(lots)
+    .set({ avgWeightKg: optNum(formData.get("avgWeightKg")), updatedBy: session.userId, updatedAt: new Date() })
+    .where(and(eq(lots.id, lotId), eq(lots.farmId, session.farmId)));
+
+  revalidatePath("/rebanho");
+}
+
 // ---------- Animals ----------
 export async function createAnimalAction(formData: FormData) {
   const session = await farmSession();
@@ -80,6 +99,17 @@ export async function createAnimalAction(formData: FormData) {
   const birthDateStr = optStr(formData.get("birthDate"));
   const birthDate = birthDateStr ? new Date(birthDateStr) : null;
   const birthWeightKg = optNum(formData.get("birthWeightKg"));
+
+  // Pai: um animal cadastrado (fatherId) OU um reprodutor externo digitado
+  // (externalFatherName, ex.: sêmen de fora numa I.A.) — nunca os dois
+  // juntos, ver FatherField (componente do form).
+  const fatherMode = str(formData.get("fatherMode"));
+  const fatherId = fatherMode === "externo" ? null : optStr(formData.get("fatherId"));
+  const externalFatherName = fatherMode === "externo" ? optStr(formData.get("externalFatherName")) : null;
+  const breedingMethod = optStr(formData.get("breedingMethod")) as
+    | "monta_natural"
+    | "inseminacao_artificial"
+    | null;
 
   await db.transaction(async (tx) => {
     const [newAnimal] = await tx
@@ -92,7 +122,9 @@ export async function createAnimalAction(formData: FormData) {
         sex,
         isPO: formData.get("isPO") === "on",
         pedigreeNumber: optStr(formData.get("pedigreeNumber")),
-        fatherId: optStr(formData.get("fatherId")),
+        fatherId,
+        externalFatherName,
+        breedingMethod,
         motherId: optStr(formData.get("motherId")),
         lotId: optStr(formData.get("lotId")),
         birthDate,
@@ -126,6 +158,14 @@ export async function updateAnimalAction(formData: FormData) {
   const sex = str(formData.get("sex")) as "macho" | "femea";
   if (!animalId || !tag || !sex) return;
 
+  const fatherMode = str(formData.get("fatherMode"));
+  const fatherId = fatherMode === "externo" ? null : optStr(formData.get("fatherId"));
+  const externalFatherName = fatherMode === "externo" ? optStr(formData.get("externalFatherName")) : null;
+  const breedingMethod = optStr(formData.get("breedingMethod")) as
+    | "monta_natural"
+    | "inseminacao_artificial"
+    | null;
+
   await db
     .update(animals)
     .set({
@@ -135,7 +175,9 @@ export async function updateAnimalAction(formData: FormData) {
       sex,
       isPO: formData.get("isPO") === "on",
       pedigreeNumber: optStr(formData.get("pedigreeNumber")),
-      fatherId: optStr(formData.get("fatherId")),
+      fatherId,
+      externalFatherName,
+      breedingMethod,
       motherId: optStr(formData.get("motherId")),
       lotId: optStr(formData.get("lotId")),
       birthDate: optStr(formData.get("birthDate"))

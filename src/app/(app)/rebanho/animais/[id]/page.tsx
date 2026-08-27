@@ -27,6 +27,13 @@ import {
 } from "@/app/actions/manejo";
 import { computeGpdSeries, overallGpd, formatGpd } from "@/lib/gpd";
 import { ConfirmForm } from "@/components/confirm-form";
+import { FatherField } from "@/components/father-field";
+
+const BREEDING_METHOD_LABEL: Record<string, string> = {
+  monta_natural: "Monta natural",
+  inseminacao_artificial: "Inseminação artificial (I.A.)",
+  transferencia_embriao: "Transferência de embrião (TE)",
+};
 
 const EVENT_LABEL: Record<string, string> = {
   cobertura: "Cobertura",
@@ -41,6 +48,8 @@ const TASK_TYPE_LABEL: Record<string, string> = {
   vermifugo: "Vermífugo",
   medicamento: "Medicamento",
   casqueamento: "Casqueamento",
+  desmame: "Desmame",
+  pesagem: "Pesagem",
   outro: "Outro",
 };
 
@@ -89,6 +98,7 @@ export default async function AnimalDetailPage({
     animal.sex === "femea"
       ? db.query.reproductionEvents.findMany({
           where: eq(reproductionEvents.motherId, id),
+          with: { father: true, donorMother: true },
           orderBy: (e, { desc }) => [desc(e.eventDate)],
         })
       : Promise.resolve([]),
@@ -188,17 +198,35 @@ export default async function AnimalDetailPage({
                   ))}
                 </select>
               </Field>
-              <Field label="Pai">
-                <select name="fatherId" defaultValue={animal.fatherId ?? ""} className={inputClass}>
-                  <option value="">— Não informado —</option>
-                  {fathers.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.tag} {f.name ? `— ${f.name}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              <FatherField
+                fathers={fathers}
+                label="Pai"
+                defaultFatherId={animal.fatherId ?? undefined}
+                defaultExternalName={animal.externalFatherName ?? undefined}
+              />
             </div>
+            <Field label="Método (opcional)">
+              <div className="flex gap-4 text-sm text-drc-green-900">
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="breedingMethod"
+                    value="monta_natural"
+                    defaultChecked={animal.breedingMethod !== "inseminacao_artificial"}
+                  />
+                  Monta natural
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="breedingMethod"
+                    value="inseminacao_artificial"
+                    defaultChecked={animal.breedingMethod === "inseminacao_artificial"}
+                  />
+                  Inseminação artificial (I.A.)
+                </label>
+              </div>
+            </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Lote">
                 <select name="lotId" defaultValue={animal.lotId ?? ""} className={inputClass}>
@@ -488,6 +516,27 @@ export default async function AnimalDetailPage({
                       )}
                       {ev.eventType === "diagnostico_gestacao" && (
                         <p>{ev.pregnant === true ? "Positivo" : ev.pregnant === false ? "Negativo" : "—"}</p>
+                      )}
+                      {(ev.eventType === "cobertura" || ev.eventType === "parto") &&
+                        (ev.father || ev.externalFatherName) && (
+                          <p>
+                            Pai: {ev.father ? `${ev.father.tag}${ev.father.name ? ` — ${ev.father.name}` : ""}` : ev.externalFatherName}
+                            {ev.externalFatherName && !ev.father ? " (externo)" : ""}
+                          </p>
+                        )}
+                      {ev.eventType === "cobertura" && ev.breedingMethod && (
+                        <p>{BREEDING_METHOD_LABEL[ev.breedingMethod] ?? ev.breedingMethod}</p>
+                      )}
+                      {ev.eventType === "cobertura" && ev.breedingMethod === "transferencia_embriao" && (
+                        <p>
+                          Doadora:{" "}
+                          {ev.donorMother
+                            ? `${ev.donorMother.tag}${ev.donorMother.name ? ` — ${ev.donorMother.name}` : ""}`
+                            : ev.externalDonorName
+                              ? `${ev.externalDonorName} (externa)`
+                              : "não informada"}{" "}
+                          — {animal.tag} foi a receptora
+                        </p>
                       )}
                       {ev.notes && <p>{ev.notes}</p>}
                       <p className="text-xs text-drc-green-900/50">

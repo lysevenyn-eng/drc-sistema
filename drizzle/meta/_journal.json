@@ -36,6 +36,34 @@
       "when": 1787772976096,
       "tag": "0004_contas_a_pagar_e_pre_cadastro",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787780356143,
+      "tag": "0005_adiciona_papel_caseiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787847231757,
+      "tag": "0006_relatorios_gemelar_peso_lote_tarefas",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787852061643,
+      "tag": "0007_reprodutor_ia_externo",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787853772491,
+      "tag": "0008_te_transferencia_embriao",
+      "breakpoints": true
     }
   ]
 }

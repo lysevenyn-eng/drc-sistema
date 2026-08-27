@@ -11,6 +11,8 @@ const TYPE_LABELS: Record<string, string> = {
   vermifugo: "Vermífugo",
   medicamento: "Medicamento",
   casqueamento: "Casqueamento",
+  desmame: "Desmame",
+  pesagem: "Pesagem",
   outro: "Outro",
 };
 

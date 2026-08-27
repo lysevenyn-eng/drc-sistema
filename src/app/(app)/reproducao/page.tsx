@@ -15,10 +15,18 @@ const EVENT_LABEL: Record<string, string> = {
   obito: "Óbito",
 };
 
+// Badge exibido ao lado do Tipo, só para cobertura — mesmo mapa usado em
+// /relatorios pra manter os rótulos consistentes.
+const BREEDING_METHOD_BADGE: Record<string, string> = {
+  inseminacao_artificial: "I.A.",
+  transferencia_embriao: "TE",
+};
+
 type AnimalRow = typeof animals.$inferSelect;
 type EventRow = typeof reproductionEvents.$inferSelect & {
   mother: AnimalRow | null;
   father: AnimalRow | null;
+  donorMother: AnimalRow | null;
   offspringAnimal: AnimalRow | null;
 };
 
@@ -33,7 +41,7 @@ export default async function ReproducaoPage() {
   const [events, poAnimals] = await Promise.all([
     db.query.reproductionEvents.findMany({
       where: eq(reproductionEvents.farmId, farmId),
-      with: { mother: true, father: true, offspringAnimal: true },
+      with: { mother: true, father: true, donorMother: true, offspringAnimal: true },
       orderBy: (e, { desc }) => [desc(e.eventDate)],
     }),
     db.query.animals.findMany({
@@ -84,12 +92,26 @@ export default async function ReproducaoPage() {
                   </td>
                   <td className="px-4 py-2.5 font-medium text-drc-green-950">
                     {EVENT_LABEL[ev.eventType] ?? ev.eventType}
+                    {ev.eventType === "cobertura" && ev.closedWithoutResult && (
+                      <span className="ml-1.5 inline-block">
+                        <Badge>Encerrada</Badge>
+                      </span>
+                    )}
+                    {ev.eventType === "cobertura" && ev.breedingMethod && BREEDING_METHOD_BADGE[ev.breedingMethod] && (
+                      <span className="ml-1.5 inline-block">
+                        <Badge tone="gold">{BREEDING_METHOD_BADGE[ev.breedingMethod]}</Badge>
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-drc-green-900/80">
                     {ev.mother ? `${ev.mother.tag}${ev.mother.name ? ` — ${ev.mother.name}` : ""}` : "—"}
                   </td>
                   <td className="px-4 py-2.5 text-drc-green-900/80">
-                    {ev.father ? `${ev.father.tag}${ev.father.name ? ` — ${ev.father.name}` : ""}` : "—"}
+                    {ev.father
+                      ? `${ev.father.tag}${ev.father.name ? ` — ${ev.father.name}` : ""}`
+                      : ev.externalFatherName
+                        ? `${ev.externalFatherName} (externo)`
+                        : "—"}
                   </td>
                   <td className="px-4 py-2.5 text-drc-green-900/80">
                     <EventDetails event={ev} />
@@ -177,8 +199,39 @@ export default async function ReproducaoPage() {
 
 function EventDetails({ event }: { event: EventRow }) {
   switch (event.eventType) {
+    case "cobertura": {
+      const previsao = new Date(event.eventDate);
+      previsao.setDate(previsao.getDate() + 150);
+      const donorLabel = event.donorMother
+        ? `${event.donorMother.tag}${event.donorMother.name ? ` — ${event.donorMother.name}` : ""}`
+        : event.externalDonorName
+          ? `${event.externalDonorName} (externa)`
+          : null;
+      return (
+        <span>
+          Previsão de parto: {previsao.toLocaleDateString("pt-BR")}
+          {event.breedingMethod === "transferencia_embriao" && (
+            <span className="block text-xs text-drc-green-900/60">
+              Doadora: {donorLabel ?? "não informada"}
+            </span>
+          )}
+          {event.notes && (
+            <span className="block text-xs text-drc-green-900/60">{event.notes}</span>
+          )}
+        </span>
+      );
+    }
     case "diagnostico_gestacao":
-      if (event.pregnant === true) return <Badge tone="green">Positivo</Badge>;
+      if (event.pregnant === true) {
+        return (
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            <Badge tone="green">Positivo</Badge>
+            {event.fetusCount != null && event.fetusCount >= 2 && (
+              <Badge tone="gold">Gemelar ({event.fetusCount})</Badge>
+            )}
+          </span>
+        );
+      }
       if (event.pregnant === false) return <Badge tone="red">Negativo</Badge>;
       return <span>—</span>;
     case "parto": {

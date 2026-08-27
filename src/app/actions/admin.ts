@@ -30,7 +30,7 @@ export async function setUserRoleAction(formData: FormData) {
 
   const userId = String(formData.get("userId") ?? "");
   const role = String(formData.get("role") ?? "");
-  if (!userId || (role !== "admin" && role !== "criador")) return;
+  if (!userId || (role !== "admin" && role !== "criador" && role !== "caseiro")) return;
   if (userId === admin.userId) return; // don't let an admin demote themselves by accident
 
   await db
@@ -45,7 +45,7 @@ export async function setUserRoleAction(formData: FormData) {
 const PreRegisterSchema = z.object({
   name: z.string().trim().min(2, { error: "Informe o nome completo" }),
   email: z.email({ error: "Informe um e-mail válido" }).trim().toLowerCase(),
-  role: z.enum(["admin", "criador"], { error: "Selecione um papel" }),
+  role: z.enum(["admin", "criador", "caseiro"], { error: "Selecione um papel" }),
 });
 
 /**

@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { purchases } from "@/db/schema";
+import { purchases, lots } from "@/db/schema";
 import { PageHeader, Card, EmptyState } from "@/components/ui";
 import { deletePurchaseAction } from "@/app/actions/compras-vendas";
 import { ConfirmForm } from "@/components/confirm-form";
@@ -15,18 +15,29 @@ const COMPOSITION_LABEL: Record<string, string> = {
   misto: "Misto",
 };
 
-export default async function ComprasPage() {
+export default async function ComprasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ lotId?: string }>;
+}) {
   const session = await requireAdmin();
   if (!session.farmId) {
     return <EmptyState>Sua conta ainda não está vinculada a uma fazenda.</EmptyState>;
   }
   const farmId = session.farmId;
+  const { lotId } = await searchParams;
 
-  const purchaseList = await db.query.purchases.findMany({
-    where: eq(purchases.farmId, farmId),
-    with: { lot: true, breed: true, animal: true },
-    orderBy: (p, { desc }) => [desc(p.purchaseDate)],
-  });
+  const [purchaseList, filteredLot] = await Promise.all([
+    db.query.purchases.findMany({
+      where: lotId ? and(eq(purchases.farmId, farmId), eq(purchases.lotId, lotId)) : eq(purchases.farmId, farmId),
+      with: { lot: true, breed: true, animal: true },
+      orderBy: (p, { desc }) => [desc(p.purchaseDate)],
+    }),
+    lotId
+      ? db.query.lots.findFirst({ where: and(eq(lots.id, lotId), eq(lots.farmId, farmId)), columns: { name: true } })
+      : Promise.resolve(null),
+  ]);
+  const filteredLotName = filteredLot?.name;
 
   return (
     <div>
@@ -45,9 +56,22 @@ export default async function ComprasPage() {
 
       <ComprasVendasTabs active="compras" />
 
+      {lotId && (
+        <div className="mb-3 flex items-center justify-between rounded-lg bg-drc-gold-500/10 px-3 py-2 text-xs text-drc-green-900">
+          <span>
+            Mostrando só as compras do lote <strong>{filteredLotName ?? "selecionado"}</strong>.
+          </span>
+          <Link href="/compras-vendas" className="font-medium underline underline-offset-2">
+            Ver todas
+          </Link>
+        </div>
+      )}
+
       <Card className="overflow-x-auto">
         {purchaseList.length === 0 ? (
-          <EmptyState>Nenhuma compra registrada ainda.</EmptyState>
+          <EmptyState>
+            {lotId ? "Nenhuma compra registrada para este lote." : "Nenhuma compra registrada ainda."}
+          </EmptyState>
         ) : (
           <table className="w-full min-w-[860px] text-sm">
             <thead>
@@ -100,7 +124,7 @@ export default async function ComprasPage() {
                       confirmMessage={
                         p.animal
                           ? `Excluir esta compra? O animal "${p.animal.tag}" continua cadastrado no Rebanho, só o valor pago registrado nele volta a branco${p.lot ? ` e a quantidade do lote "${p.lot.name}" é subtraída em 1` : ""}. Esta ação não pode ser desfeita.`
-                          : `Excluir esta compra? A quantidade que ela somou ao lote "${p.lot?.name ?? "—"}" será subtraída de volta. O custo por cabeça do lote não é ajustado automaticamente. Esta ação não pode ser desfeita.`
+                          : `Excluir esta compra? A quantidade que ela somou ao lote "${p.lot?.name ?? "—"}" será subtraída de volta. O custo por cabeça e o peso médio do lote não são ajustados automaticamente. Esta ação não pode ser desfeita.`
                       }
                     >
                       <input type="hidden" name="purchaseId" value={p.id} />

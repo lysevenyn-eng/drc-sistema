@@ -32,7 +32,7 @@ const RegisterSchema = z.object({
 async function startSession(user: {
   id: string;
   farmId: string | null;
-  role: "admin" | "criador";
+  role: "admin" | "criador" | "caseiro";
   status: "pendente" | "aprovado" | "rejeitado";
   name: string;
 }) {
