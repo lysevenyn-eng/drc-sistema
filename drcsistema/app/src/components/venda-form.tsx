@@ -3,7 +3,16 @@
 import { useState } from "react";
 
 type LotOption = { id: string; name: string; quantity: number };
-type AnimalOption = { id: string; tag: string; name: string | null };
+type AnimalOption = {
+  id: string;
+  tag: string;
+  name: string | null;
+  lot: { name: string } | null;
+  breedName: string | null;
+  birthDate: string | Date | null;
+  purchaseDate: string | Date | null;
+  latestWeightKg: number | null;
+};
 
 const SALE_MODE_LABELS: Record<string, string> = {
   vivo_cabeca: "Vivo — por cabeça",
@@ -11,6 +20,25 @@ const SALE_MODE_LABELS: Record<string, string> = {
   carcaca: "Carcaça",
   outra: "Outra",
 };
+
+// O lote se mistura com o tempo e não dá pra confiar nele pra identificar um
+// animal na hora da venda — por isso o rótulo reúne raça, peso e a data em
+// que o animal entrou na fazenda (compra ou nascimento, o que tiver), que não
+// mudam com a mistura. O lote ainda aparece por último, quando existir.
+function animalOptionLabel(a: AnimalOption) {
+  const parts = [`${a.tag}${a.name ? ` — ${a.name}` : ""}`];
+  parts.push(a.breedName ?? "raça não informada");
+  parts.push(a.latestWeightKg != null ? `${a.latestWeightKg} kg` : "peso não registrado");
+  if (a.purchaseDate) {
+    parts.push(`comprado ${new Date(a.purchaseDate).toLocaleDateString("pt-BR")}`);
+  } else if (a.birthDate) {
+    parts.push(`nasceu ${new Date(a.birthDate).toLocaleDateString("pt-BR")}`);
+  } else {
+    parts.push("data de entrada não registrada");
+  }
+  if (a.lot) parts.push(`Lote: ${a.lot.name}`);
+  return parts.join(" · ");
+}
 
 export function VendaForm({
   lots,
@@ -113,11 +141,15 @@ export function VendaForm({
             </option>
             {animals.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.tag}
-                {a.name ? ` — ${a.name}` : ""}
+                {animalOptionLabel(a)}
               </option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-drc-green-900/60">
+            Cada animal mostra raça, último peso registrado e data de entrada na fazenda (compra
+            ou nascimento) — como o lote se mistura com o tempo, essas informações ajudam mais a
+            identificar o animal certo do que o nome do lote sozinho.
+          </p>
         </Field>
       )}
 

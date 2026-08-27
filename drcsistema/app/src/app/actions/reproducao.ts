@@ -64,12 +64,39 @@ export async function createReproductionEventAction(formData: FormData) {
     if (!offspringAnimalId) return;
   }
 
-  const fatherId = optStr(formData.get("fatherId"));
+  // Pai: um animal cadastrado (fatherId) OU um reprodutor externo digitado
+  // (externalFatherName, ex.: sêmen de fora numa I.A.) — nunca os dois juntos,
+  // ver FatherField (componente do form) e fatherMode, que decide qual dos
+  // dois campos do formulário vale.
+  const fatherMode = str(formData.get("fatherMode"));
+  const fatherId = fatherMode === "externo" ? null : optStr(formData.get("fatherId"));
+  const externalFatherName = fatherMode === "externo" ? optStr(formData.get("externalFatherName")) : null;
+  // Método só é perguntado no formulário para eventType "cobertura".
+  const breedingMethod =
+    eventType === "cobertura"
+      ? (optStr(formData.get("breedingMethod")) as
+          | "monta_natural"
+          | "inseminacao_artificial"
+          | "transferencia_embriao"
+          | null)
+      : null;
+  // Doadora: só relevante quando o método é "transferencia_embriao" (ver
+  // DonorMotherField). motherId/motherIds acima continuam sendo a receptora
+  // — não muda nada nesse campo, a doadora é guardada à parte.
+  const donorMode = str(formData.get("donorMode"));
+  const donorMotherId =
+    breedingMethod === "transferencia_embriao" && donorMode !== "externa"
+      ? optStr(formData.get("donorMotherId"))
+      : null;
+  const externalDonorName =
+    breedingMethod === "transferencia_embriao" && donorMode === "externa"
+      ? optStr(formData.get("externalDonorName"))
+      : null;
   const notes = optStr(formData.get("notes"));
 
   if (eventType === "cobertura") {
     // Múltiplas matrizes na mesma cobertura: um evento por matriz marcada,
-    // todos com a mesma data/pai/observações (ver ReproEventForm).
+    // todos com a mesma data/pai/método/observações (ver ReproEventForm).
     const motherIds = [...new Set(formData.getAll("motherIds").map(String).filter(Boolean))];
     if (motherIds.length === 0) return;
 
@@ -78,6 +105,10 @@ export async function createReproductionEventAction(formData: FormData) {
         farmId: session.farmId,
         motherId,
         fatherId,
+        externalFatherName,
+        breedingMethod,
+        donorMotherId,
+        externalDonorName,
         eventType,
         eventDate,
         notes,
@@ -92,6 +123,10 @@ export async function createReproductionEventAction(formData: FormData) {
       farmId: session.farmId,
       motherId,
       fatherId,
+      externalFatherName,
+      breedingMethod,
+      donorMotherId,
+      externalDonorName,
       eventType,
       eventDate,
       offspringCount,

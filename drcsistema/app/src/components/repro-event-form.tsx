@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { FatherField } from "@/components/father-field";
+import { DonorMotherField } from "@/components/donor-mother-field";
 
 type Option = { id: string; tag: string; name: string | null };
 
@@ -27,6 +29,7 @@ export function ReproEventForm({
   defaultMotherId?: string;
 }) {
   const [eventType, setEventType] = useState("cobertura");
+  const [breedingMethod, setBreedingMethod] = useState("monta_natural");
   const [pregnant, setPregnant] = useState("");
   const today = new Date().toISOString().slice(0, 10);
   const [eventDate, setEventDate] = useState(today);
@@ -118,16 +121,48 @@ export function ReproEventForm({
       )}
 
       {(eventType === "cobertura" || eventType === "parto") && (
-        <Field label="Pai (opcional)">
-          <select name="fatherId" defaultValue="" className={inputClass}>
-            <option value="">— Não informado —</option>
-            {fathers.map((f) => (
-              <option key={f.id} value={f.id}>
-                {optionLabel(f)}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <FatherField fathers={fathers} />
+      )}
+
+      {eventType === "cobertura" && (
+        <>
+          <Field label="Método">
+            <div className="flex flex-wrap gap-4 text-sm text-drc-green-900">
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="breedingMethod"
+                  value="monta_natural"
+                  checked={breedingMethod === "monta_natural"}
+                  onChange={() => setBreedingMethod("monta_natural")}
+                />
+                Monta natural
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="breedingMethod"
+                  value="inseminacao_artificial"
+                  checked={breedingMethod === "inseminacao_artificial"}
+                  onChange={() => setBreedingMethod("inseminacao_artificial")}
+                />
+                Inseminação artificial (I.A.)
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="breedingMethod"
+                  value="transferencia_embriao"
+                  checked={breedingMethod === "transferencia_embriao"}
+                  onChange={() => setBreedingMethod("transferencia_embriao")}
+                />
+                Transferência de embrião (TE)
+              </label>
+            </div>
+          </Field>
+
+          {breedingMethod === "transferencia_embriao" && <DonorMotherField mothers={mothers} />}
+        </>
       )}
 
       {eventType === "diagnostico_gestacao" && (

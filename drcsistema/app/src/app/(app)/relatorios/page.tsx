@@ -28,6 +28,12 @@ const STATUS_TONE: Record<CoberturaStatus, "neutral" | "green" | "gold" | "red">
   encerrada: "neutral",
 };
 
+// Mesmo mapa usado em /reproducao, pra manter os rótulos consistentes.
+const BREEDING_METHOD_BADGE: Record<string, string> = {
+  inseminacao_artificial: "I.A.",
+  transferencia_embriao: "TE",
+};
+
 const MONTHS_WINDOW = 6;
 
 function lastMonths(n: number) {
@@ -58,7 +64,7 @@ export default async function RelatoriosPage() {
   const [events, mortEvents, individualCountRow, lotAggRow, saleRows] = await Promise.all([
     db.query.reproductionEvents.findMany({
       where: eq(reproductionEvents.farmId, farmId),
-      with: { mother: true, father: true },
+      with: { mother: true, father: true, donorMother: true },
     }),
     db.query.mortalityEvents.findMany({
       where: eq(mortalityEvents.farmId, farmId),
@@ -191,7 +197,19 @@ export default async function RelatoriosPage() {
                     {c.motherTag}
                     {c.motherName ? ` — ${c.motherName}` : ""}
                   </td>
-                  <td className="px-4 py-2.5 text-drc-green-900/80">{c.fatherTag ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-drc-green-900/80">
+                    {c.fatherLabel ?? "—"}
+                    {c.breedingMethod && BREEDING_METHOD_BADGE[c.breedingMethod] && (
+                      <span className="ml-1.5 inline-block">
+                        <Badge tone="gold">{BREEDING_METHOD_BADGE[c.breedingMethod]}</Badge>
+                      </span>
+                    )}
+                    {c.breedingMethod === "transferencia_embriao" && (
+                      <span className="block text-xs text-drc-green-900/60">
+                        Doadora: {c.donorLabel ?? "não informada"}
+                      </span>
+                    )}
+                  </td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-drc-green-900/80">
                     {c.previsaoParto.toLocaleDateString("pt-BR")}
                   </td>

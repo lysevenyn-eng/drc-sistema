@@ -48,6 +48,11 @@ export const expenseCategoryEnum = pgEnum("expense_category", [
   "frete",
   "outras",
 ]);
+export const breedingMethodEnum = pgEnum("breeding_method", [
+  "monta_natural",
+  "inseminacao_artificial",
+  "transferencia_embriao",
+]);
 export const saleTypeEnum = pgEnum("sale_type", ["lote", "individual"]);
 export const saleModeEnum = pgEnum("sale_mode", ["vivo_cabeca", "vivo_peso", "carcaca", "outra"]);
 export const walletAccountTypeEnum = pgEnum("wallet_account_type", ["dinheiro", "banco"]);
@@ -120,6 +125,14 @@ export const animals = pgTable(
     isPO: boolean("is_po").notNull().default(false),
     pedigreeNumber: text("pedigree_number"),
     fatherId: text("father_id"),
+    // Reprodutor externo (sêmen de fora, ex.: I.A. com touro que não é da
+    // fazenda) — alternativa a fatherId quando não há um animal cadastrado
+    // pra apontar. Os dois são preenchidos pelo mesmo campo no formulário
+    // (FatherField), nunca os dois juntos. Mesmo padrão em reproductionEvents.
+    externalFatherName: text("external_father_name"),
+    // Método de concepção deste animal (monta natural x inseminação artificial),
+    // opcional/histórico — nulo = não informado. Ver mesmo campo em reproductionEvents.
+    breedingMethod: breedingMethodEnum("breeding_method"),
     motherId: text("mother_id"),
     lotId: text("lot_id").references(() => lots.id, { onDelete: "set null" }),
     status: animalStatusEnum("status").notNull().default("ativo"),
@@ -156,6 +169,20 @@ export const reproductionEvents = pgTable("reproduction_events", {
   farmId: text("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
   motherId: text("mother_id").notNull().references(() => animals.id),
   fatherId: text("father_id").references(() => animals.id),
+  // Reprodutor externo (sêmen de fora) — preenchido no lugar de fatherId quando
+  // o pai não é um animal cadastrado na fazenda (comum em I.A. com sêmen
+  // comprado). Nunca os dois juntos; ver FatherField (componente do form).
+  externalFatherName: text("external_father_name"),
+  // Só relevante em eventType = "cobertura": como a cobertura foi feita.
+  // Nulo = não informado (eventos antigos, antes deste campo existir).
+  breedingMethod: breedingMethodEnum("breeding_method"),
+  // Só relevante quando breedingMethod = "transferencia_embriao": motherId
+  // continua sendo a receptora (quem carrega e pare a cria — não muda nada
+  // no resto do sistema). donorMotherId/externalDonorName guardam a mãe
+  // genética (doadora do embrião), separadamente. Mesmo padrão cadastrado x
+  // externo do fatherId/externalFatherName, ver DonorMotherField.
+  donorMotherId: text("donor_mother_id").references(() => animals.id),
+  externalDonorName: text("external_donor_name"),
   eventType: reproEventTypeEnum("event_type").notNull(),
   eventDate: timestamp("event_date", { withTimezone: true }).notNull().defaultNow(),
   // Parto: total de filhotes e quantos nasceram vivos (a diferença = natimortos).
@@ -190,6 +217,11 @@ export const reproductionEventsRelations = relations(reproductionEvents, ({ one 
     fields: [reproductionEvents.fatherId],
     references: [animals.id],
     relationName: "reproFather",
+  }),
+  donorMother: one(animals, {
+    fields: [reproductionEvents.donorMotherId],
+    references: [animals.id],
+    relationName: "reproDonorMother",
   }),
   offspringAnimal: one(animals, {
     fields: [reproductionEvents.offspringAnimalId],

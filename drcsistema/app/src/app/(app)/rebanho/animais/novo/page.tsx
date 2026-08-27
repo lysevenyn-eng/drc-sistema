@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { breeds, lots, animals } from "@/db/schema";
 import { PageHeader, Card } from "@/components/ui";
 import { createAnimalAction } from "@/app/actions/rebanho";
+import { FatherField } from "@/components/father-field";
 
 export default async function NovoAnimalPage({
   searchParams,
@@ -92,17 +93,21 @@ export default async function NovoAnimalPage({
                 Só aparecem fêmeas ativas já cadastradas.
               </p>
             </Field>
-            <Field label="Pai">
-              <select name="fatherId" className={inputClass} defaultValue={prefillFatherId ?? ""}>
-                <option value="">— Não informado —</option>
-                {fathers.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.tag} {f.name ? `— ${f.name}` : ""}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <FatherField fathers={fathers} label="Pai" defaultFatherId={prefillFatherId} />
           </div>
+
+          <Field label="Método (opcional)">
+            <div className="flex gap-4 text-sm text-drc-green-900">
+              <label className="flex items-center gap-1.5">
+                <input type="radio" name="breedingMethod" value="monta_natural" defaultChecked />
+                Monta natural
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input type="radio" name="breedingMethod" value="inseminacao_artificial" />
+                Inseminação artificial (I.A.)
+              </label>
+            </div>
+          </Field>
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Lote (opcional)">

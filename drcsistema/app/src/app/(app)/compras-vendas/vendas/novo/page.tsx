@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { lots, animals } from "@/db/schema";
+import { lots, animals, purchases } from "@/db/schema";
 import { PageHeader, Card } from "@/components/ui";
 import { createSaleAction } from "@/app/actions/compras-vendas";
 import { VendaForm } from "@/components/venda-form";
@@ -28,10 +28,52 @@ export default async function NovaVendaPage({
         }),
         db.query.animals.findMany({
           where: and(eq(animals.farmId, farmId), eq(animals.status, "ativo")),
+          with: {
+            lot: true,
+            breed: true,
+            weighings: { columns: { weightKg: true, weighedAt: true } },
+          },
           orderBy: (a, { asc }) => [asc(a.tag)],
         }),
       ])
     : [[], []];
+
+  // O nome do lote nem sempre ajuda a identificar o animal na hora da venda —
+  // um lote novo se mistura com o resto do rebanho, e a maioria dos animais
+  // (principalmente os de abate) não é marcada individualmente por lote depois
+  // disso. Por isso reunimos aqui outras informações mais estáveis: raça,
+  // último peso registrado e a data em que o animal entrou na fazenda (compra
+  // individual ou nascimento) — ver VendaForm.
+  const animalIds = activeAnimals.map((a) => a.id);
+  const animalPurchases = animalIds.length
+    ? await db.query.purchases.findMany({
+        where: inArray(purchases.animalId, animalIds),
+        orderBy: (p, { desc }) => [desc(p.purchaseDate)],
+      })
+    : [];
+  const purchaseDateByAnimalId = new Map<string, Date>();
+  for (const p of animalPurchases) {
+    if (p.animalId && !purchaseDateByAnimalId.has(p.animalId)) {
+      purchaseDateByAnimalId.set(p.animalId, p.purchaseDate);
+    }
+  }
+
+  const animalOptions = activeAnimals.map((a) => {
+    const latestWeighing = a.weighings.reduce<{ weightKg: number; weighedAt: Date } | null>(
+      (latest, w) => (!latest || new Date(w.weighedAt) > new Date(latest.weighedAt) ? w : latest),
+      null
+    );
+    return {
+      id: a.id,
+      tag: a.tag,
+      name: a.name,
+      lot: a.lot ? { name: a.lot.name } : null,
+      breedName: a.breed?.name ?? null,
+      birthDate: a.birthDate,
+      purchaseDate: purchaseDateByAnimalId.get(a.id) ?? null,
+      latestWeightKg: latestWeighing?.weightKg ?? null,
+    };
+  });
 
   return (
     <div>
@@ -44,7 +86,7 @@ export default async function NovaVendaPage({
       )}
 
       <Card className="max-w-2xl p-5">
-        <VendaForm lots={activeLots} animals={activeAnimals} action={createSaleAction} />
+        <VendaForm lots={activeLots} animals={animalOptions} action={createSaleAction} />
       </Card>
     </div>
   );

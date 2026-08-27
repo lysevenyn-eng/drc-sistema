@@ -4,6 +4,7 @@ type AnimalRow = typeof animals.$inferSelect;
 export type ReproEventRow = typeof reproductionEvents.$inferSelect & {
   mother: AnimalRow | null;
   father: AnimalRow | null;
+  donorMother: AnimalRow | null;
 };
 
 export type CoberturaStatus =
@@ -19,7 +20,9 @@ export type CoberturaResumo = {
   motherId: string;
   motherTag: string;
   motherName: string | null;
-  fatherTag: string | null;
+  fatherLabel: string | null;
+  breedingMethod: "monta_natural" | "inseminacao_artificial" | "transferencia_embriao" | null;
+  donorLabel: string | null;
   eventDate: Date;
   previsaoParto: Date;
   status: CoberturaStatus;
@@ -86,12 +89,28 @@ export function classifyCoberturas(events: ReproEventRow[]): CoberturaResumo[] {
         }
       }
 
+      const fatherLabel = cobertura.father
+        ? `${cobertura.father.tag}${cobertura.father.name ? ` — ${cobertura.father.name}` : ""}`
+        : cobertura.externalFatherName
+          ? `${cobertura.externalFatherName} (externo)`
+          : null;
+
+      // Doadora: só existe quando o método é "transferencia_embriao" — nos
+      // demais casos os campos vêm nulos e donorLabel fica null.
+      const donorLabel = cobertura.donorMother
+        ? `${cobertura.donorMother.tag}${cobertura.donorMother.name ? ` — ${cobertura.donorMother.name}` : ""}`
+        : cobertura.externalDonorName
+          ? `${cobertura.externalDonorName} (externa)`
+          : null;
+
       results.push({
         eventId: cobertura.id,
         motherId: cobertura.motherId,
         motherTag: cobertura.mother?.tag ?? "—",
         motherName: cobertura.mother?.name ?? null,
-        fatherTag: cobertura.father?.tag ?? null,
+        fatherLabel,
+        breedingMethod: cobertura.breedingMethod,
+        donorLabel,
         eventDate: new Date(cobertura.eventDate),
         previsaoParto,
         status,

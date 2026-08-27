@@ -100,6 +100,17 @@ export async function createAnimalAction(formData: FormData) {
   const birthDate = birthDateStr ? new Date(birthDateStr) : null;
   const birthWeightKg = optNum(formData.get("birthWeightKg"));
 
+  // Pai: um animal cadastrado (fatherId) OU um reprodutor externo digitado
+  // (externalFatherName, ex.: sêmen de fora numa I.A.) — nunca os dois
+  // juntos, ver FatherField (componente do form).
+  const fatherMode = str(formData.get("fatherMode"));
+  const fatherId = fatherMode === "externo" ? null : optStr(formData.get("fatherId"));
+  const externalFatherName = fatherMode === "externo" ? optStr(formData.get("externalFatherName")) : null;
+  const breedingMethod = optStr(formData.get("breedingMethod")) as
+    | "monta_natural"
+    | "inseminacao_artificial"
+    | null;
+
   await db.transaction(async (tx) => {
     const [newAnimal] = await tx
       .insert(animals)
@@ -111,7 +122,9 @@ export async function createAnimalAction(formData: FormData) {
         sex,
         isPO: formData.get("isPO") === "on",
         pedigreeNumber: optStr(formData.get("pedigreeNumber")),
-        fatherId: optStr(formData.get("fatherId")),
+        fatherId,
+        externalFatherName,
+        breedingMethod,
         motherId: optStr(formData.get("motherId")),
         lotId: optStr(formData.get("lotId")),
         birthDate,
@@ -145,6 +158,14 @@ export async function updateAnimalAction(formData: FormData) {
   const sex = str(formData.get("sex")) as "macho" | "femea";
   if (!animalId || !tag || !sex) return;
 
+  const fatherMode = str(formData.get("fatherMode"));
+  const fatherId = fatherMode === "externo" ? null : optStr(formData.get("fatherId"));
+  const externalFatherName = fatherMode === "externo" ? optStr(formData.get("externalFatherName")) : null;
+  const breedingMethod = optStr(formData.get("breedingMethod")) as
+    | "monta_natural"
+    | "inseminacao_artificial"
+    | null;
+
   await db
     .update(animals)
     .set({
@@ -154,7 +175,9 @@ export async function updateAnimalAction(formData: FormData) {
       sex,
       isPO: formData.get("isPO") === "on",
       pedigreeNumber: optStr(formData.get("pedigreeNumber")),
-      fatherId: optStr(formData.get("fatherId")),
+      fatherId,
+      externalFatherName,
+      breedingMethod,
       motherId: optStr(formData.get("motherId")),
       lotId: optStr(formData.get("lotId")),
       birthDate: optStr(formData.get("birthDate"))
