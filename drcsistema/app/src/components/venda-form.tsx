@@ -25,12 +25,32 @@ export function VendaForm({
   const [saleMode, setSaleMode] = useState<"vivo_cabeca" | "vivo_peso" | "carcaca" | "outra">("vivo_cabeca");
   const [liveWeight, setLiveWeight] = useState("");
   const [carcassWeight, setCarcassWeight] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [totalValue, setTotalValue] = useState("");
+  const [pricePerHead, setPricePerHead] = useState("");
+  const [pricePerKg, setPricePerKg] = useState("");
   const today = new Date().toISOString().slice(0, 10);
 
   const liveWeightNum = Number(liveWeight);
   const carcassWeightNum = Number(carcassWeight);
   const rendimento =
     liveWeightNum > 0 && carcassWeightNum > 0 ? (carcassWeightNum / liveWeightNum) * 100 : null;
+
+  // Ajudantes opcionais que preenchem "Valor total" automaticamente — o campo
+  // continua editável depois, caso o valor combinado seja outro.
+  const quantityNum = saleKind === "lote" ? Number(quantity) || 0 : 1;
+
+  function applyPricePerHead(value: string) {
+    setPricePerHead(value);
+    const n = Number(value);
+    if (n > 0 && quantityNum > 0) setTotalValue((n * quantityNum).toFixed(2));
+  }
+
+  function applyPricePerKg(value: string) {
+    setPricePerKg(value);
+    const n = Number(value);
+    if (n > 0 && liveWeightNum > 0) setTotalValue((n * liveWeightNum).toFixed(2));
+  }
 
   return (
     <form action={action} className="space-y-4">
@@ -74,7 +94,15 @@ export function VendaForm({
             </select>
           </Field>
           <Field label="Quantidade vendida">
-            <input name="quantity" type="number" min={1} required className={inputClass} />
+            <input
+              name="quantity"
+              type="number"
+              min={1}
+              required
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              className={inputClass}
+            />
           </Field>
         </div>
       ) : (
@@ -110,9 +138,65 @@ export function VendaForm({
           </select>
         </Field>
         <Field label="Valor total (R$)">
-          <input name="totalValue" type="number" min={0} step="0.01" required className={inputClass} />
+          <input
+            name="totalValue"
+            type="number"
+            min={0}
+            step="0.01"
+            required
+            value={totalValue}
+            onChange={(e) => setTotalValue(e.target.value)}
+            className={inputClass}
+          />
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-drc-green-900/60">
+            <span>ou preço por cabeça:</span>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={pricePerHead}
+              onChange={(e) => applyPricePerHead(e.target.value)}
+              placeholder="R$"
+              className="w-20 rounded border border-drc-border bg-white px-1.5 py-1 text-xs text-drc-green-950 outline-none focus:border-drc-green-700"
+            />
+            <span>
+              × {quantityNum || 0} cabeça{quantityNum === 1 ? "" : "s"} preenche o valor total acima.
+            </span>
+          </div>
         </Field>
       </div>
+
+      {saleMode === "vivo_peso" && (
+        <div className="rounded-lg border border-drc-border bg-drc-green-950/5 p-3">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Peso vendido (kg)">
+              <input
+                name="liveWeightKg"
+                type="number"
+                min={0}
+                step="0.1"
+                value={liveWeight}
+                onChange={(e) => setLiveWeight(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Preço por kg (R$, opcional)">
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={pricePerKg}
+                onChange={(e) => applyPricePerKg(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <p className="mt-2 text-xs text-drc-green-900/60">
+            Preenchendo peso e preço por kg, o valor total acima é calculado automaticamente (dá
+            pra ajustar depois).
+          </p>
+        </div>
+      )}
 
       {saleMode === "carcaca" && (
         <div className="rounded-lg border border-drc-border bg-drc-green-950/5 p-3">

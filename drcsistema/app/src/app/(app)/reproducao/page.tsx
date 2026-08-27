@@ -84,6 +84,11 @@ export default async function ReproducaoPage() {
                   </td>
                   <td className="px-4 py-2.5 font-medium text-drc-green-950">
                     {EVENT_LABEL[ev.eventType] ?? ev.eventType}
+                    {ev.eventType === "cobertura" && ev.closedWithoutResult && (
+                      <span className="ml-1.5 inline-block">
+                        <Badge>Encerrada</Badge>
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-drc-green-900/80">
                     {ev.mother ? `${ev.mother.tag}${ev.mother.name ? ` — ${ev.mother.name}` : ""}` : "—"}
@@ -177,8 +182,29 @@ export default async function ReproducaoPage() {
 
 function EventDetails({ event }: { event: EventRow }) {
   switch (event.eventType) {
+    case "cobertura": {
+      const previsao = new Date(event.eventDate);
+      previsao.setDate(previsao.getDate() + 150);
+      return (
+        <span>
+          Previsão de parto: {previsao.toLocaleDateString("pt-BR")}
+          {event.notes && (
+            <span className="block text-xs text-drc-green-900/60">{event.notes}</span>
+          )}
+        </span>
+      );
+    }
     case "diagnostico_gestacao":
-      if (event.pregnant === true) return <Badge tone="green">Positivo</Badge>;
+      if (event.pregnant === true) {
+        return (
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            <Badge tone="green">Positivo</Badge>
+            {event.fetusCount != null && event.fetusCount >= 2 && (
+              <Badge tone="gold">Gemelar ({event.fetusCount})</Badge>
+            )}
+          </span>
+        );
+      }
       if (event.pregnant === false) return <Badge tone="red">Negativo</Badge>;
       return <span>—</span>;
     case "parto": {

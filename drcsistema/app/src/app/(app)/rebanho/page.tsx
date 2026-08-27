@@ -7,6 +7,7 @@ import { PageHeader, Card, Badge, EmptyState } from "@/components/ui";
 import {
   createBreedAction,
   updateLotStatusAction,
+  updateLotAvgWeightAction,
   deleteLotAction,
   deleteAnimalAction,
 } from "@/app/actions/rebanho";
@@ -73,6 +74,7 @@ export default async function RebanhoPage() {
                 <th className="px-4 py-2.5">Composição</th>
                 <th className="px-4 py-2.5">Quantidade</th>
                 <th className="px-4 py-2.5">Custo/cabeça</th>
+                <th className="px-4 py-2.5">Peso médio</th>
                 <th className="px-4 py-2.5">Status</th>
                 <th className="px-4 py-2.5" />
               </tr>
@@ -88,6 +90,27 @@ export default async function RebanhoPage() {
                     {lot.costPerHead != null
                       ? lot.costPerHead.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
                       : "—"}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <form action={updateLotAvgWeightAction} className="flex items-center gap-1">
+                      <input type="hidden" name="lotId" value={lot.id} />
+                      <input
+                        name="avgWeightKg"
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        defaultValue={lot.avgWeightKg ?? ""}
+                        placeholder="—"
+                        className="w-16 rounded border border-drc-border bg-white px-1.5 py-1 text-xs text-drc-green-950 outline-none focus:border-drc-green-700"
+                      />
+                      <span className="text-xs text-drc-green-900/50">kg</span>
+                      <button
+                        type="submit"
+                        className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                      >
+                        Salvar
+                      </button>
+                    </form>
                   </td>
                   <td className="px-4 py-2.5">
                     <Badge tone={lot.status === "ativo" ? "green" : "neutral"}>
@@ -116,6 +139,14 @@ export default async function RebanhoPage() {
                       >
                         + Tarefa
                       </Link>
+                      {isAdmin && (
+                        <Link
+                          href={`/compras-vendas?lotId=${lot.id}`}
+                          className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                        >
+                          Ver compras
+                        </Link>
+                      )}
                       {isAdmin && (
                         <ConfirmForm
                           action={deleteLotAction}

@@ -70,6 +70,25 @@ export async function updateLotStatusAction(formData: FormData) {
   revalidatePath("/rebanho");
 }
 
+/**
+ * Atualização manual do peso médio do lote — ex.: depois de pesar uma amostra
+ * numa balança de lote. Sobrescreve direto, sem cálculo (mesmo padrão do
+ * saldo manual da Carteira) — complementa a média ponderada que já acontece
+ * automaticamente quando uma compra por lote informa peso.
+ */
+export async function updateLotAvgWeightAction(formData: FormData) {
+  const session = await farmSession();
+  const lotId = str(formData.get("lotId"));
+  if (!lotId) return;
+
+  await db
+    .update(lots)
+    .set({ avgWeightKg: optNum(formData.get("avgWeightKg")), updatedBy: session.userId, updatedAt: new Date() })
+    .where(and(eq(lots.id, lotId), eq(lots.farmId, session.farmId)));
+
+  revalidatePath("/rebanho");
+}
+
 // ---------- Animals ----------
 export async function createAnimalAction(formData: FormData) {
   const session = await farmSession();

@@ -35,6 +35,8 @@ export const taskTypeEnum = pgEnum("task_type", [
   "vermifugo",
   "medicamento",
   "casqueamento",
+  "desmame",
+  "pesagem",
   "outro",
 ]);
 export const taskTargetEnum = pgEnum("task_target", ["animal", "lote"]);
@@ -95,6 +97,11 @@ export const lots = pgTable("lots", {
   composition: compositionEnum("composition").notNull().default("misto"),
   quantity: integer("quantity").notNull().default(0),
   costPerHead: numeric("cost_per_head", { precision: 12, scale: 2, mode: "number" }),
+  // Peso médio por cabeça (kg) — alimentado por compras que informam peso (média
+  // ponderada, igual costPerHead) e/ou atualizado manualmente (ex.: depois de
+  // pesar uma amostra do lote). Animais de lote não são cadastrados individualmente,
+  // então não têm pesagem própria — este é o único jeito de acompanhar peso do lote.
+  avgWeightKg: numeric("avg_weight_kg", { precision: 6, scale: 2, mode: "number" }),
   status: lotStatusEnum("status").notNull().default("ativo"),
   notes: text("notes"),
   updatedBy: text("updated_by").references(() => users.id),
@@ -156,6 +163,14 @@ export const reproductionEvents = pgTable("reproduction_events", {
   liveCount: integer("live_count"),
   // Diagnóstico de gestação: resultado (true = positivo, false = negativo).
   pregnant: boolean("pregnant"),
+  // Diagnóstico de gestação (só quando pregnant = true): nº de fetos, se já souber
+  // (ex.: ultrassom) — >=2 marca "gemelar" no relatório de reprodução, antes mesmo
+  // do parto confirmar (que também marca gemelar sozinho, via offspringCount).
+  fetusCount: integer("fetus_count"),
+  // Só em eventos do tipo "cobertura": marca que esse ciclo foi encerrado sem
+  // diagnóstico/parto/óbito (ex.: matriz vendida, desistiu de acompanhar) — tira
+  // a cobertura da lista de "aguardando resultado" no relatório de reprodução.
+  closedWithoutResult: boolean("closed_without_result").notNull().default(false),
   // Desmame (e opcionalmente outros eventos): qual filhote já cadastrado o evento se refere.
   offspringAnimalId: text("offspring_animal_id").references(() => animals.id, {
     onDelete: "set null",
@@ -258,6 +273,9 @@ export const purchases = pgTable("purchases", {
   breedId: text("breed_id").references(() => breeds.id),
   composition: compositionEnum("composition").notNull().default("misto"),
   totalValue: numeric("total_value", { precision: 12, scale: 2, mode: "number" }).notNull(),
+  // Peso total (kg) da compra por lote, opcional — usado pra entrar na média
+  // ponderada de lots.avgWeightKg, mesmo padrão de totalValue/costPerHead.
+  totalWeightKg: numeric("total_weight_kg", { precision: 8, scale: 2, mode: "number" }),
   purchaseDate: timestamp("purchase_date", { withTimezone: true }).notNull().defaultNow(),
   updatedBy: text("updated_by").references(() => users.id),
   ...timestamps,
@@ -326,10 +344,11 @@ export const sales = pgTable("sales", {
   totalValue: numeric("total_value", { precision: 12, scale: 2, mode: "number" }).notNull(),
   costBasis: numeric("cost_basis", { precision: 12, scale: 2, mode: "number" }),
   profit: numeric("profit", { precision: 12, scale: 2, mode: "number" }),
-  // Só usados quando saleMode = "carcaca" — peso vivo (antes do abate) e peso
-  // da carcaça (depois), pra calcular o rendimento de carcaça (carcaça ÷ vivo).
-  // Guardados como dois pesos em vez de já salvar o percentual pronto, pra não
-  // duplicar dado nem correr risco de o percentual ficar desatualizado.
+  // liveWeightKg: peso vivo (kg) — em saleMode "carcaca", o peso antes do abate
+  // (junto com carcassWeightKg, pra calcular o rendimento carcaça ÷ vivo); em
+  // saleMode "vivo_peso", o peso vendido (usado pra calcular o valor por kg no
+  // formulário). Guardados como pesos brutos, não o percentual/preço já pronto,
+  // pra não duplicar dado nem correr risco de ficar desatualizado.
   liveWeightKg: numeric("live_weight_kg", { precision: 6, scale: 2, mode: "number" }),
   carcassWeightKg: numeric("carcass_weight_kg", { precision: 6, scale: 2, mode: "number" }),
   saleDate: timestamp("sale_date", { withTimezone: true }).notNull().defaultNow(),

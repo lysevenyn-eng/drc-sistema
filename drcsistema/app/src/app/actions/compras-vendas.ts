@@ -174,6 +174,10 @@ export async function createPurchaseAction(formData: FormData) {
   const breedId = optStr(formData.get("breedId"));
   const composition = (str(formData.get("composition")) || "misto") as Composition;
   const unitCost = totalValue / quantity;
+  // Peso opcional — quando informado, entra na média ponderada de avgWeightKg
+  // do lote, exatamente como o custo por cabeça já funciona (ver abaixo).
+  const totalWeightKg = optNum(formData.get("totalWeightKg"));
+  const unitWeight = totalWeightKg != null && totalWeightKg > 0 ? totalWeightKg / quantity : null;
 
   await db.transaction(async (tx) => {
     let targetLotId: string;
@@ -189,6 +193,7 @@ export async function createPurchaseAction(formData: FormData) {
           composition,
           quantity,
           costPerHead: unitCost,
+          avgWeightKg: unitWeight,
           updatedBy: session.userId,
         })
         .returning({ id: lots.id });
@@ -206,10 +211,23 @@ export async function createPurchaseAction(formData: FormData) {
         existingLot.costPerHead != null
           ? (existingLot.quantity * existingLot.costPerHead + quantity * unitCost) / newQuantity
           : unitCost;
+      // Sem peso nesta compra, mantém o que o lote já tinha (peso é opcional,
+      // diferente do custo — nem toda compra por lote precisa informar).
+      const newAvgWeightKg =
+        unitWeight != null
+          ? existingLot.avgWeightKg != null
+            ? (existingLot.quantity * existingLot.avgWeightKg + quantity * unitWeight) / newQuantity
+            : unitWeight
+          : existingLot.avgWeightKg;
 
       await tx
         .update(lots)
-        .set({ quantity: newQuantity, costPerHead: newCostPerHead, updatedAt: new Date() })
+        .set({
+          quantity: newQuantity,
+          costPerHead: newCostPerHead,
+          avgWeightKg: newAvgWeightKg,
+          updatedAt: new Date(),
+        })
         .where(eq(lots.id, lotId));
       targetLotId = lotId;
     }
@@ -225,6 +243,7 @@ export async function createPurchaseAction(formData: FormData) {
         breedId,
         composition,
         totalValue,
+        totalWeightKg,
         purchaseDate: new Date(purchaseDateStr),
         updatedBy: session.userId,
       })
@@ -253,10 +272,11 @@ export async function createPurchaseAction(formData: FormData) {
  * Exclui uma compra.
  *
  * Por lote: a quantidade do lote vinculado volta atrás (o que essa compra
- * somou é subtraído). O custo por cabeça do lote NÃO é revertido — depois
- * de outras compras/vendas nesse meio tempo, "desfazer" a média ponderada
- * com exatidão deixaria de ser confiável, então preferimos manter o último
- * custo calculado a arriscar um número que pareça exato mas não é.
+ * somou é subtraído). O custo por cabeça e o peso médio do lote NÃO são
+ * revertidos — depois de outras compras/vendas nesse meio tempo, "desfazer"
+ * a média ponderada com exatidão deixaria de ser confiável, então preferimos
+ * manter o último valor calculado a arriscar um número que pareça exato mas
+ * não é (mesmo raciocínio para os dois campos).
  *
  * Individual: o animal continua cadastrado (excluir a compra não excluiu o
  * animal) — só o `acquisitionCost` dele volta a null, e se ele tinha sido

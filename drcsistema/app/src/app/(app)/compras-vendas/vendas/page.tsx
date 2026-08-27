@@ -118,6 +118,12 @@ export default async function VendasPage() {
                         {s.liveWeightKg}kg → {s.carcassWeightKg}kg)
                       </p>
                     )}
+                    {s.saleMode === "vivo_peso" && s.liveWeightKg != null && (
+                      <p className="mt-0.5 text-xs text-drc-green-900/50">
+                        {s.liveWeightKg}kg
+                        {s.liveWeightKg > 0 && ` · ${formatCurrency(s.totalValue / s.liveWeightKg)}/kg`}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-drc-green-900/80">{formatCurrency(s.totalValue)}</td>
                   <td className="px-4 py-2.5">

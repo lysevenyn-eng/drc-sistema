@@ -43,6 +43,13 @@
       "when": 1787780356143,
       "tag": "0005_adiciona_papel_caseiro",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787847231757,
+      "tag": "0006_relatorios_gemelar_peso_lote_tarefas",
+      "breakpoints": true
     }
   ]
 }
