@@ -11,6 +11,7 @@ import {
   resolveAbateEventAction,
   deleteLotAbateEventAction,
   deleteLotMortalityEventAction,
+  reactivateAnimalAction,
 } from "@/app/actions/rebanho";
 import { ConfirmForm } from "@/components/confirm-form";
 import { AbateObitoForm } from "@/components/abate-obito-form";
@@ -116,6 +117,17 @@ export default async function AbatesObitosPage() {
                   >
                     Editar
                   </Link>
+                  {!resolved && !isLote && ev.animalId && (
+                    <ConfirmForm
+                      action={reactivateAnimalAction}
+                      confirmMessage="Desfazer este abate? O animal volta para o status Ativo e o registro de abate é removido. Se ele estava em um lote, a quantidade volta pro lote."
+                    >
+                      <input type="hidden" name="animalId" value={ev.animalId} />
+                      <button type="submit" className="text-xs font-medium text-red-600 underline underline-offset-2">
+                        Desfazer
+                      </button>
+                    </ConfirmForm>
+                  )}
                   {isAdmin && !resolved && !isLote && ev.animalId && (
                     <Link
                       href={`/compras-vendas/vendas/novo?animalId=${ev.animalId}`}
@@ -191,6 +203,24 @@ export default async function AbatesObitosPage() {
                   >
                     Editar
                   </Link>
+                  {!isLote && ev.animalId && (!ev.confirmedAt || isAdmin) && (
+                    <ConfirmForm
+                      action={reactivateAnimalAction}
+                      confirmMessage={
+                        ev.confirmedAt
+                          ? "Desfazer este óbito já confirmado? O animal volta para o status Ativo e o registro de óbito é removido. Esta ação não pode ser desfeita."
+                          : "Desfazer este óbito? O animal volta para o status Ativo e o registro de óbito é removido."
+                      }
+                    >
+                      <input type="hidden" name="animalId" value={ev.animalId} />
+                      <button
+                        type="submit"
+                        className="inline-block text-xs font-medium text-red-600 underline underline-offset-2"
+                      >
+                        Desfazer
+                      </button>
+                    </ConfirmForm>
+                  )}
                   {isAdmin && !ev.confirmedAt && (
                     <>
                       <form action={confirmDeathReasonAction} className="space-y-2">
