@@ -291,6 +291,77 @@ export async function createPurchaseAction(formData: FormData) {
  * animal) — só o `acquisitionCost` dele volta a null, e se ele tinha sido
  * vinculado a um lote nessa compra, a quantidade do lote volta atrás em 1.
  */
+/**
+ * Edita uma compra já lançada. Em compra individual, o valor pago também
+ * atualiza acquisitionCost do animal (é o mesmo dado, guardado nos dois
+ * lugares). Em compra por lote, valor total, peso total e quantidade NÃO são
+ * editáveis — eles alimentam a média ponderada de costPerHead/avgWeightKg do
+ * lote (ver createPurchaseAction), e desfazer com exatidão essa média depois
+ * de outras compras/vendas no meio do caminho deixaria de ser confiável
+ * (mesmo motivo de deletePurchaseAction não reverter esses dois campos). Pra
+ * corrigir valor/peso/quantidade de uma compra em lote, excluir e lançar de
+ * novo. Admin-only.
+ */
+export async function updatePurchaseAction(formData: FormData) {
+  const session = await adminFarmSession();
+  const purchaseId = str(formData.get("purchaseId"));
+  if (!purchaseId) return;
+
+  const purchase = await db.query.purchases.findFirst({
+    where: and(eq(purchases.id, purchaseId), eq(purchases.farmId, session.farmId)),
+  });
+  if (!purchase) return;
+
+  const purchaseDateStr = str(formData.get("purchaseDate"));
+  if (!purchaseDateStr) return;
+  const description = optStr(formData.get("description"));
+  const supplierName = optStr(formData.get("supplierName"));
+  const breedId = optStr(formData.get("breedId"));
+  const purchaseDate = new Date(purchaseDateStr);
+
+  if (purchase.animalId) {
+    const totalValue = optNum(formData.get("totalValue"));
+    await db.transaction(async (tx) => {
+      if (totalValue != null && totalValue > 0) {
+        await tx
+          .update(animals)
+          .set({ acquisitionCost: totalValue, updatedAt: new Date() })
+          .where(eq(animals.id, purchase.animalId!));
+      }
+      await tx
+        .update(purchases)
+        .set({
+          totalValue: totalValue != null && totalValue > 0 ? totalValue : purchase.totalValue,
+          description,
+          supplierName,
+          breedId,
+          purchaseDate,
+          updatedBy: session.userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(purchases.id, purchaseId));
+    });
+  } else {
+    const composition = str(formData.get("composition")) as Composition;
+    await db
+      .update(purchases)
+      .set({
+        description,
+        supplierName,
+        breedId,
+        composition: composition || purchase.composition,
+        purchaseDate,
+        updatedBy: session.userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(purchases.id, purchaseId));
+  }
+
+  revalidatePath("/compras-vendas");
+  if (purchase.animalId) revalidatePath(`/rebanho/animais/${purchase.animalId}`);
+  redirect("/compras-vendas");
+}
+
 export async function deletePurchaseAction(formData: FormData) {
   const session = await adminFarmSession();
   const purchaseId = str(formData.get("purchaseId"));
@@ -519,7 +590,30 @@ export async function createSaleAction(formData: FormData) {
       where: and(eq(lots.id, lotId), eq(lots.farmId, session.farmId)),
     });
     if (!lot) return;
-    if (quantity > lot.quantity) {
+
+    // Veio de "Ir para nova venda" a partir de um abate em lote pendente
+    // (ver abates-obitos/page.tsx e VendaForm)? Esse lote já foi baixado na
+    // hora do abate (ver registerAbateAction) — baixar de novo aqui
+    // duplicaria o desconto — mesmo raciocínio de createSaleAction no ramo
+    // individual pra um animal "abatido". Só vale o vínculo se o abate ainda
+    // não tiver sido resolvido por outra venda (evita reusar um link antigo).
+    const abateEventId = optStr(formData.get("abateEventId"));
+    const linkedAbate = abateEventId
+      ? await db.query.abateEvents.findFirst({
+          where: and(
+            eq(abateEvents.id, abateEventId),
+            eq(abateEvents.farmId, session.farmId),
+            eq(abateEvents.lotId, lotId),
+            isNull(abateEvents.saleId)
+          ),
+        })
+      : null;
+
+    // Sem vínculo, o teto é o saldo ativo do lote (venda direta). Com vínculo,
+    // o teto é a quantidade do próprio abate — não dá pra vender mais do que
+    // saiu naquele lote de abate, mesmo que o lote ativo tenha saldo de sobra
+    // (seria de outro abate/saldo, não desse).
+    if (linkedAbate ? quantity > linkedAbate.quantity : quantity > lot.quantity) {
       redirect("/compras-vendas/vendas/novo?saleError=saldo");
     }
 
@@ -527,10 +621,12 @@ export async function createSaleAction(formData: FormData) {
     const profit = costBasis != null ? totalValue - costBasis : null;
 
     await db.transaction(async (tx) => {
-      await tx
-        .update(lots)
-        .set({ quantity: sql`greatest(${lots.quantity} - ${quantity}, 0)`, updatedAt: new Date() })
-        .where(eq(lots.id, lotId));
+      if (!linkedAbate) {
+        await tx
+          .update(lots)
+          .set({ quantity: sql`greatest(${lots.quantity} - ${quantity}, 0)`, updatedAt: new Date() })
+          .where(eq(lots.id, lotId));
+      }
 
       const [newSale] = await tx
         .insert(sales)
@@ -671,6 +767,56 @@ export async function createSaleAction(formData: FormData) {
     revalidatePath("/dashboard");
     redirect("/compras-vendas/vendas");
   }
+}
+
+/**
+ * Edita uma venda já lançada — modo, valor, pesos, data e comprador. Não dá
+ * pra mudar tipo/lote/animal/quantidade (afeta a baixa do rebanho já feita
+ * na hora da venda) — pra isso, excluir e lançar de novo. O custo (costBasis)
+ * calculado na hora da venda não é recalculado a partir do lote de novo — só
+ * o lucro, a partir do novo valor. Admin-only, mesma regra do resto do
+ * módulo financeiro.
+ */
+export async function updateSaleAction(formData: FormData) {
+  const session = await adminFarmSession();
+  const saleId = str(formData.get("saleId"));
+  if (!saleId) return;
+
+  const sale = await db.query.sales.findFirst({
+    where: and(eq(sales.id, saleId), eq(sales.farmId, session.farmId)),
+  });
+  if (!sale) return;
+
+  const saleMode = str(formData.get("saleMode")) as SaleMode;
+  const totalValue = optNum(formData.get("totalValue"));
+  const saleDateStr = str(formData.get("saleDate"));
+  if (!saleMode || !totalValue || totalValue <= 0 || !saleDateStr) return;
+
+  const liveWeightKg = optNum(formData.get("liveWeightKg"));
+  const carcassWeightKg = optNum(formData.get("carcassWeightKg"));
+  const buyer = optStr(formData.get("buyer"));
+  const profit = sale.costBasis != null ? totalValue - sale.costBasis : null;
+
+  await db
+    .update(sales)
+    .set({
+      saleMode,
+      unitValue: totalValue / sale.quantity,
+      totalValue,
+      profit,
+      liveWeightKg,
+      carcassWeightKg,
+      saleDate: new Date(saleDateStr),
+      buyer,
+      updatedBy: session.userId,
+      updatedAt: new Date(),
+    })
+    .where(eq(sales.id, saleId));
+
+  revalidatePath("/compras-vendas/vendas");
+  revalidatePath("/financeiro");
+  revalidatePath("/dashboard");
+  redirect("/compras-vendas/vendas");
 }
 
 /** Exclui uma venda: devolve a quantidade ao lote e, se individual, reativa o animal. */

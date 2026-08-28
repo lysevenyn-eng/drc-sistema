@@ -48,18 +48,24 @@ export function VendaForm({
   blendedPoolQuantity,
   action,
   preselectAnimalId,
+  preselectLotId,
+  presetQuantity,
   presetSaleMode,
   presetCarcassWeightKg,
   presetLiveWeightKg,
+  presetAbateEventId,
 }: {
   lots: LotOption[];
   animals: AnimalOption[];
   blendedPoolQuantity: number;
   action: (formData: FormData) => void;
   preselectAnimalId?: string;
+  preselectLotId?: string;
+  presetQuantity?: number;
   presetSaleMode?: "vivo_cabeca" | "vivo_peso" | "carcaca" | "outra";
   presetCarcassWeightKg?: number | null;
   presetLiveWeightKg?: number | null;
+  presetAbateEventId?: string;
 }) {
   const [saleKind, setSaleKind] = useState<"lote" | "individual">(
     preselectAnimalId ? "individual" : "lote"
@@ -72,7 +78,7 @@ export function VendaForm({
   const [carcassWeight, setCarcassWeight] = useState(
     presetCarcassWeightKg != null ? String(presetCarcassWeightKg) : ""
   );
-  const [quantity, setQuantity] = useState("");
+  const [quantity, setQuantity] = useState(presetQuantity != null ? String(presetQuantity) : "");
   const [totalValue, setTotalValue] = useState("");
   const [pricePerHead, setPricePerHead] = useState("");
   const [pricePerKg, setPricePerKg] = useState("");
@@ -101,6 +107,7 @@ export function VendaForm({
 
   return (
     <form action={action} className="space-y-4">
+      {presetAbateEventId && <input type="hidden" name="abateEventId" value={presetAbateEventId} />}
       <Field label="Tipo de venda">
         <div className="flex gap-4 text-sm text-drc-green-900">
           <label className="flex items-center gap-1.5">
@@ -130,7 +137,7 @@ export function VendaForm({
         <div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Lote">
-              <select name="lotId" required defaultValue="" className={inputClass}>
+              <select name="lotId" required defaultValue={preselectLotId ?? ""} className={inputClass}>
                 <option value="" disabled>
                   Selecione o lote
                 </option>
@@ -163,6 +170,13 @@ export function VendaForm({
             média ponderada entre todos os lotes ativos, e a baixa de quantidade é repartida entre
             eles automaticamente.
           </p>
+          {(presetCarcassWeightKg != null || presetLiveWeightKg != null) && (
+            <p className="mt-1.5 rounded-lg bg-drc-gold-500/10 px-3 py-2 text-xs text-drc-green-900">
+              Lote, quantidade e peso pré-preenchidos a partir do abate em lote pendente — confira
+              antes de salvar. Depois de salvar, volte em Abates e óbitos e marque esse abate como
+              vendido.
+            </p>
+          )}
         </div>
       ) : (
         <Field label="Animal">

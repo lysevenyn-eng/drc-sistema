@@ -136,22 +136,30 @@ export default async function VendasPage() {
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <ConfirmForm
-                      action={deleteSaleAction}
-                      confirmMessage={
-                        s.saleType === "lote"
-                          ? `Excluir esta venda? A quantidade (${s.quantity}) volta para o lote "${s.lot?.name ?? "—"}". Esta ação não pode ser desfeita.`
-                          : "Excluir esta venda? O animal volta para o status Ativo. Esta ação não pode ser desfeita."
-                      }
-                    >
-                      <input type="hidden" name="saleId" value={s.id} />
-                      <button
-                        type="submit"
-                        className="text-xs font-medium text-red-600 underline underline-offset-2"
+                    <div className="flex flex-col items-end gap-1.5">
+                      <Link
+                        href={`/compras-vendas/vendas/${s.id}/editar`}
+                        className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
                       >
-                        Excluir
-                      </button>
-                    </ConfirmForm>
+                        Editar
+                      </Link>
+                      <ConfirmForm
+                        action={deleteSaleAction}
+                        confirmMessage={
+                          s.saleType === "lote"
+                            ? `Excluir esta venda? A quantidade (${s.quantity}) volta para o lote "${s.lot?.name ?? "—"}". Esta ação não pode ser desfeita.`
+                            : "Excluir esta venda? O animal volta para o status Ativo. Esta ação não pode ser desfeita."
+                        }
+                      >
+                        <input type="hidden" name="saleId" value={s.id} />
+                        <button
+                          type="submit"
+                          className="text-xs font-medium text-red-600 underline underline-offset-2"
+                        >
+                          Excluir
+                        </button>
+                      </ConfirmForm>
+                    </div>
                   </td>
                 </tr>
               ))}

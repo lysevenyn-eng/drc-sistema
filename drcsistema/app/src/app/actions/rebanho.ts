@@ -510,6 +510,76 @@ export async function confirmDeathReasonAction(formData: FormData) {
 }
 
 /**
+ * Edita um óbito já registrado — motivo, data e (em lote) a quantidade.
+ * Mesma abertura de quem registra: qualquer um edita enquanto não
+ * confirmado; depois de confirmado, só admin. Quando quem edita é admin e o
+ * óbito ainda não tinha confirmedAt, a edição já confirma (mesma regra do
+ * registro em registerDeathAction). Em lote, se a nova quantidade não couber
+ * no saldo do lote, é ignorada mas o resto da edição segue normalmente.
+ */
+export async function updateMortalityEventAction(formData: FormData) {
+  const session = await farmSession();
+  const eventId = str(formData.get("eventId"));
+  if (!eventId) return;
+
+  const event = await db.query.mortalityEvents.findFirst({
+    where: and(eq(mortalityEvents.id, eventId), eq(mortalityEvents.farmId, session.farmId)),
+  });
+  if (!event) return;
+
+  const isAdmin = session.role === "admin";
+  if (event.confirmedAt && !isAdmin) return;
+
+  const reason = optStr(formData.get("reason"));
+  if (isAdmin && !reason) return;
+  const eventDateStr = optStr(formData.get("eventDate"));
+  const eventDate = eventDateStr ? new Date(eventDateStr) : event.eventDate;
+
+  const isLote = !event.animalId;
+  const requestedQuantity = isLote ? optNum(formData.get("quantity")) : null;
+  const delta = requestedQuantity != null && requestedQuantity > 0 ? requestedQuantity - event.quantity : 0;
+
+  await db.transaction(async (tx) => {
+    let finalQuantity = event.quantity;
+    if (isLote && delta !== 0 && event.lotId) {
+      const lot = await tx.query.lots.findFirst({ where: eq(lots.id, event.lotId) });
+      if (lot && delta <= lot.quantity) {
+        await tx
+          .update(lots)
+          .set({ quantity: sql`${lots.quantity} - ${delta}`, updatedAt: new Date() })
+          .where(eq(lots.id, event.lotId));
+        finalQuantity = requestedQuantity as number;
+      }
+    }
+
+    await tx
+      .update(mortalityEvents)
+      .set({
+        quantity: finalQuantity,
+        reason,
+        confirmedAt: isAdmin ? event.confirmedAt ?? new Date() : event.confirmedAt,
+        eventDate,
+        updatedBy: session.userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(mortalityEvents.id, eventId));
+
+    if (event.animalId && reason) {
+      await tx
+        .update(animals)
+        .set({ statusReason: reason, updatedAt: new Date() })
+        .where(eq(animals.id, event.animalId));
+    }
+  });
+
+  revalidatePath("/abates-obitos");
+  revalidatePath("/rebanho");
+  revalidatePath("/dashboard");
+  if (event.animalId) revalidatePath(`/rebanho/animais/${event.animalId}`);
+  redirect("/abates-obitos");
+}
+
+/**
  * Registrar abate — normalmente pelo cabanheiro, na tela /abates-obitos. De
  * um animal cadastrado individualmente (dá baixa nele, status "abatido") ou
  * de N cabeças de um lote de uma vez (kind = "lote", sem apontar quais
@@ -611,6 +681,73 @@ export async function registerAbateAction(formData: FormData) {
   revalidatePath(`/rebanho/animais/${animalId}`);
   revalidatePath("/abates-obitos");
   revalidatePath("/dashboard");
+}
+
+/**
+ * Edita um abate já registrado — peso, data, observações e (em lote) a
+ * quantidade. Mesma abertura de quem registra: qualquer um edita enquanto
+ * não resolvido (sem venda vinculada e sem resolvedAt); depois de resolvido,
+ * só admin. Não dá pra mudar o animal/lote em si (excluir e lançar de novo
+ * pra isso). Em lote, se a nova quantidade não couber no saldo do lote, a
+ * quantidade é ignorada mas o resto da edição (peso, data, observações)
+ * segue normalmente.
+ */
+export async function updateAbateEventAction(formData: FormData) {
+  const session = await farmSession();
+  const eventId = str(formData.get("eventId"));
+  if (!eventId) return;
+
+  const event = await db.query.abateEvents.findFirst({
+    where: and(eq(abateEvents.id, eventId), eq(abateEvents.farmId, session.farmId)),
+  });
+  if (!event) return;
+
+  const isAdmin = session.role === "admin";
+  const resolved = !!event.saleId || !!event.resolvedAt;
+  if (resolved && !isAdmin) return;
+
+  const carcassWeightKg = optNum(formData.get("carcassWeightKg"));
+  const liveWeightKg = optNum(formData.get("liveWeightKg"));
+  const notes = optStr(formData.get("notes"));
+  const eventDateStr = optStr(formData.get("eventDate"));
+  const eventDate = eventDateStr ? new Date(eventDateStr) : event.eventDate;
+
+  const isLote = !event.animalId;
+  const requestedQuantity = isLote ? optNum(formData.get("quantity")) : null;
+  const delta = requestedQuantity != null && requestedQuantity > 0 ? requestedQuantity - event.quantity : 0;
+
+  await db.transaction(async (tx) => {
+    let finalQuantity = event.quantity;
+    if (isLote && delta !== 0 && event.lotId) {
+      const lot = await tx.query.lots.findFirst({ where: eq(lots.id, event.lotId) });
+      if (lot && delta <= lot.quantity) {
+        await tx
+          .update(lots)
+          .set({ quantity: sql`${lots.quantity} - ${delta}`, updatedAt: new Date() })
+          .where(eq(lots.id, event.lotId));
+        finalQuantity = requestedQuantity as number;
+      }
+    }
+
+    await tx
+      .update(abateEvents)
+      .set({
+        quantity: finalQuantity,
+        carcassWeightKg,
+        liveWeightKg,
+        eventDate,
+        notes,
+        updatedBy: session.userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(abateEvents.id, eventId));
+  });
+
+  revalidatePath("/abates-obitos");
+  revalidatePath("/rebanho");
+  revalidatePath("/dashboard");
+  if (event.animalId) revalidatePath(`/rebanho/animais/${event.animalId}`);
+  redirect("/abates-obitos");
 }
 
 /**

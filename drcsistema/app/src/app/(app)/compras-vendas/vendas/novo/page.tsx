@@ -14,11 +14,27 @@ const ERROR_MESSAGES: Record<string, string> = {
 export default async function NovaVendaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saleError?: string; animalId?: string }>;
+  searchParams: Promise<{
+    saleError?: string;
+    animalId?: string;
+    lotId?: string;
+    quantity?: string;
+    carcassWeightKg?: string;
+    liveWeightKg?: string;
+    abateEventId?: string;
+  }>;
 }) {
   const session = await requireAdmin();
   const farmId = session.farmId;
-  const { saleError, animalId: preselectAnimalId } = await searchParams;
+  const {
+    saleError,
+    animalId: preselectAnimalId,
+    lotId: preselectLotId,
+    quantity: presetQuantityStr,
+    carcassWeightKg: lotCarcassStr,
+    liveWeightKg: lotLiveStr,
+    abateEventId: presetAbateEventId,
+  } = await searchParams;
 
   // Animais "ativo" (venda direta) e "abatido" (abate registrado antes na
   // tela Abates e óbitos, esperando só a venda — ver registerAbateAction e
@@ -96,6 +112,17 @@ export default async function NovaVendaPage({
 
   const blendedPoolQuantity = activeLots.reduce((sum, l) => sum + l.quantity, 0);
 
+  // Veio de "Ir para nova venda" a partir de um abate em lote pendente? O
+  // peso (e a quantidade) já vêm na própria URL — diferente do caso
+  // individual, aqui não precisa buscar no banco: um lote pode ter mais de
+  // um abate pendente, então o link já manda o valor exato do abate clicado.
+  const lotCarcassWeightKg = lotCarcassStr ? Number(lotCarcassStr) : null;
+  const lotLiveWeightKg = lotLiveStr ? Number(lotLiveStr) : null;
+  const presetSaleMode = pendingAbate || lotCarcassWeightKg != null || lotLiveWeightKg != null ? "carcaca" : undefined;
+  const presetCarcassWeightKg = pendingAbate?.carcassWeightKg ?? lotCarcassWeightKg;
+  const presetLiveWeightKg = pendingAbate?.liveWeightKg ?? lotLiveWeightKg;
+  const presetQuantity = presetQuantityStr ? Number(presetQuantityStr) : undefined;
+
   return (
     <div>
       <PageHeader title="Nova venda" description="Por lote (respeitando o saldo) ou individual" showBack />
@@ -113,9 +140,12 @@ export default async function NovaVendaPage({
           blendedPoolQuantity={blendedPoolQuantity}
           action={createSaleAction}
           preselectAnimalId={preselectAnimalId}
-          presetSaleMode={pendingAbate ? "carcaca" : undefined}
-          presetCarcassWeightKg={pendingAbate?.carcassWeightKg ?? null}
-          presetLiveWeightKg={pendingAbate?.liveWeightKg ?? null}
+          preselectLotId={preselectLotId}
+          presetQuantity={presetQuantity}
+          presetSaleMode={presetSaleMode}
+          presetCarcassWeightKg={presetCarcassWeightKg}
+          presetLiveWeightKg={presetLiveWeightKg}
+          presetAbateEventId={presetAbateEventId}
         />
       </Card>
     </div>

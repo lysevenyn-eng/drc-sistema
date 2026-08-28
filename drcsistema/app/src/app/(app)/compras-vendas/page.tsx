@@ -119,22 +119,30 @@ export default async function ComprasPage({
                     {formatCurrency(p.totalValue / p.quantity)}
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <ConfirmForm
-                      action={deletePurchaseAction}
-                      confirmMessage={
-                        p.animal
-                          ? `Excluir esta compra? O animal "${p.animal.tag}" continua cadastrado no Rebanho, só o valor pago registrado nele volta a branco${p.lot ? ` e a quantidade do lote "${p.lot.name}" é subtraída em 1` : ""}. Esta ação não pode ser desfeita.`
-                          : `Excluir esta compra? A quantidade que ela somou ao lote "${p.lot?.name ?? "—"}" será subtraída de volta. O custo por cabeça e o peso médio do lote não são ajustados automaticamente. Esta ação não pode ser desfeita.`
-                      }
-                    >
-                      <input type="hidden" name="purchaseId" value={p.id} />
-                      <button
-                        type="submit"
-                        className="text-xs font-medium text-red-600 underline underline-offset-2"
+                    <div className="flex flex-col items-end gap-1.5">
+                      <Link
+                        href={`/compras-vendas/${p.id}/editar`}
+                        className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
                       >
-                        Excluir
-                      </button>
-                    </ConfirmForm>
+                        Editar
+                      </Link>
+                      <ConfirmForm
+                        action={deletePurchaseAction}
+                        confirmMessage={
+                          p.animal
+                            ? `Excluir esta compra? O animal "${p.animal.tag}" continua cadastrado no Rebanho, só o valor pago registrado nele volta a branco${p.lot ? ` e a quantidade do lote "${p.lot.name}" é subtraída em 1` : ""}. Esta ação não pode ser desfeita.`
+                            : `Excluir esta compra? A quantidade que ela somou ao lote "${p.lot?.name ?? "—"}" será subtraída de volta. O custo por cabeça e o peso médio do lote não são ajustados automaticamente. Esta ação não pode ser desfeita.`
+                        }
+                      >
+                        <input type="hidden" name="purchaseId" value={p.id} />
+                        <button
+                          type="submit"
+                          className="text-xs font-medium text-red-600 underline underline-offset-2"
+                        >
+                          Excluir
+                        </button>
+                      </ConfirmForm>
+                    </div>
                   </td>
                 </tr>
               ))}

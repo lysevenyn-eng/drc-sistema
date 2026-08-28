@@ -109,44 +109,54 @@ export default async function AbatesObitosPage() {
                   {ev.liveWeightKg != null ? ` · vivo ${ev.liveWeightKg} kg` : ""}
                 </p>
                 {ev.notes && <p className="mt-1 text-xs text-drc-green-900/60">{ev.notes}</p>}
-                {isAdmin && !resolved && !isLote && ev.animalId && (
+                <div className="mt-2 flex flex-wrap items-center gap-3">
                   <Link
-                    href={`/compras-vendas/vendas/novo?animalId=${ev.animalId}`}
-                    className="mt-2 inline-block text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                    href={`/abates-obitos/abate/${ev.id}/editar`}
+                    className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
                   >
-                    Registrar venda →
+                    Editar
                   </Link>
-                )}
-                {isAdmin && !resolved && isLote && (
-                  <div className="mt-2 flex flex-wrap items-center gap-3">
-                    {ev.lotId && (
-                      <Link
-                        href="/compras-vendas/vendas/novo"
-                        className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
-                      >
-                        Ir para nova venda →
-                      </Link>
-                    )}
-                    <form action={resolveAbateEventAction}>
-                      <input type="hidden" name="eventId" value={ev.id} />
-                      <button
-                        type="submit"
-                        className="rounded-lg bg-drc-gold-500 px-3 py-1.5 text-xs font-semibold text-drc-green-950 hover:bg-drc-gold-400"
-                      >
-                        Marcar como vendido
-                      </button>
-                    </form>
-                    <ConfirmForm
-                      action={deleteLotAbateEventAction}
-                      confirmMessage="Excluir este registro de abate em lote? A quantidade volta para o lote."
+                  {isAdmin && !resolved && !isLote && ev.animalId && (
+                    <Link
+                      href={`/compras-vendas/vendas/novo?animalId=${ev.animalId}`}
+                      className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
                     >
-                      <input type="hidden" name="eventId" value={ev.id} />
-                      <button type="submit" className="text-xs font-medium text-red-600 underline underline-offset-2">
-                        Excluir
-                      </button>
-                    </ConfirmForm>
-                  </div>
-                )}
+                      Registrar venda →
+                    </Link>
+                  )}
+                  {isAdmin && !resolved && isLote && ev.lotId && (
+                    <Link
+                      href={`/compras-vendas/vendas/novo?lotId=${ev.lotId}&quantity=${ev.quantity}&abateEventId=${ev.id}${
+                        ev.carcassWeightKg != null ? `&carcassWeightKg=${ev.carcassWeightKg}` : ""
+                      }${ev.liveWeightKg != null ? `&liveWeightKg=${ev.liveWeightKg}` : ""}`}
+                      className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                    >
+                      Ir para nova venda →
+                    </Link>
+                  )}
+                  {isAdmin && !resolved && isLote && (
+                    <>
+                      <form action={resolveAbateEventAction}>
+                        <input type="hidden" name="eventId" value={ev.id} />
+                        <button
+                          type="submit"
+                          className="rounded-lg bg-drc-gold-500 px-3 py-1.5 text-xs font-semibold text-drc-green-950 hover:bg-drc-gold-400"
+                        >
+                          Marcar como vendido
+                        </button>
+                      </form>
+                      <ConfirmForm
+                        action={deleteLotAbateEventAction}
+                        confirmMessage="Excluir este registro de abate em lote? A quantidade volta para o lote."
+                      >
+                        <input type="hidden" name="eventId" value={ev.id} />
+                        <button type="submit" className="text-xs font-medium text-red-600 underline underline-offset-2">
+                          Excluir
+                        </button>
+                      </ConfirmForm>
+                    </>
+                  )}
+                </div>
               </div>
             );
           })
@@ -174,41 +184,49 @@ export default async function AbatesObitosPage() {
                   {new Date(ev.eventDate).toLocaleDateString("pt-BR")}
                   {ev.reason ? ` · ${ev.reason}` : ""}
                 </p>
-                {isAdmin && !ev.confirmedAt && (
-                  <div className="mt-2 space-y-2">
-                    <form action={confirmDeathReasonAction} className="space-y-2">
-                      <input type="hidden" name="eventId" value={ev.id} />
-                      <textarea
-                        name="reason"
-                        required
-                        rows={2}
-                        defaultValue={ev.reason ?? ""}
-                        placeholder="Confirmar motivo do óbito"
-                        className={inputClass}
-                      />
-                      <button
-                        type="submit"
-                        className="rounded-lg bg-drc-gold-500 px-3 py-1.5 text-xs font-semibold text-drc-green-950 hover:bg-drc-gold-400"
-                      >
-                        Confirmar motivo
-                      </button>
-                    </form>
-                    {isLote && (
-                      <ConfirmForm
-                        action={deleteLotMortalityEventAction}
-                        confirmMessage="Excluir este registro de óbito em lote? A quantidade volta para o lote."
-                      >
+                <div className="mt-2 space-y-2">
+                  <Link
+                    href={`/abates-obitos/obito/${ev.id}/editar`}
+                    className="inline-block text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                  >
+                    Editar
+                  </Link>
+                  {isAdmin && !ev.confirmedAt && (
+                    <>
+                      <form action={confirmDeathReasonAction} className="space-y-2">
                         <input type="hidden" name="eventId" value={ev.id} />
+                        <textarea
+                          name="reason"
+                          required
+                          rows={2}
+                          defaultValue={ev.reason ?? ""}
+                          placeholder="Confirmar motivo do óbito"
+                          className={inputClass}
+                        />
                         <button
                           type="submit"
-                          className="text-xs font-medium text-red-600 underline underline-offset-2"
+                          className="rounded-lg bg-drc-gold-500 px-3 py-1.5 text-xs font-semibold text-drc-green-950 hover:bg-drc-gold-400"
                         >
-                          Excluir
+                          Confirmar motivo
                         </button>
-                      </ConfirmForm>
-                    )}
-                  </div>
-                )}
+                      </form>
+                      {isLote && (
+                        <ConfirmForm
+                          action={deleteLotMortalityEventAction}
+                          confirmMessage="Excluir este registro de óbito em lote? A quantidade volta para o lote."
+                        >
+                          <input type="hidden" name="eventId" value={ev.id} />
+                          <button
+                            type="submit"
+                            className="text-xs font-medium text-red-600 underline underline-offset-2"
+                          >
+                            Excluir
+                          </button>
+                        </ConfirmForm>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             );
           })
