@@ -244,7 +244,7 @@ export function VendaForm({
                 name="liveWeightKg"
                 type="number"
                 min={0}
-                step="0.1"
+                step="0.001"
                 value={liveWeight}
                 onChange={(e) => setLiveWeight(e.target.value)}
                 className={inputClass}
@@ -276,7 +276,7 @@ export function VendaForm({
                 name="liveWeightKg"
                 type="number"
                 min={0}
-                step="0.1"
+                step="0.001"
                 value={liveWeight}
                 onChange={(e) => setLiveWeight(e.target.value)}
                 className={inputClass}
@@ -287,7 +287,7 @@ export function VendaForm({
                 name="carcassWeightKg"
                 type="number"
                 min={0}
-                step="0.1"
+                step="0.001"
                 value={carcassWeight}
                 onChange={(e) => setCarcassWeight(e.target.value)}
                 className={inputClass}

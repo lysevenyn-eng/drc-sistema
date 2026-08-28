@@ -70,7 +70,7 @@ export function CompraForm({
           </div>
 
           <Field label="Peso total do lote (kg, opcional)">
-            <input name="totalWeightKg" type="number" min={0} step="0.1" className={inputClass} />
+            <input name="totalWeightKg" type="number" min={0} step="0.001" className={inputClass} />
             <p className="mt-1 text-xs text-drc-green-900/50">
               Usado para calcular o peso médio por cabeça do lote — média ponderada, igual ao
               custo por cabeça.

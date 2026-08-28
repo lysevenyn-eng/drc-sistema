@@ -106,7 +106,7 @@ export default async function RebanhoPage() {
                         name="avgWeightKg"
                         type="number"
                         min={0}
-                        step="0.1"
+                        step="0.001"
                         defaultValue={lot.avgWeightKg ?? ""}
                         placeholder="—"
                         className="w-16 rounded border border-drc-border bg-white px-1.5 py-1 text-xs text-drc-green-950 outline-none focus:border-drc-green-700"

@@ -135,7 +135,7 @@ export default async function NovoAnimalPage({
           </div>
 
           <Field label="Peso ao nascer (kg, opcional)">
-            <input name="birthWeightKg" type="number" min={0} step={0.1} className={inputClass} />
+            <input name="birthWeightKg" type="number" min={0} step={0.001} className={inputClass} />
             <p className="mt-1 text-xs text-drc-green-900/50">
               Vira a primeira pesagem do histórico — já entra no cálculo do GPD.
             </p>

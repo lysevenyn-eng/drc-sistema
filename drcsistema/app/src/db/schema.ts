@@ -106,7 +106,8 @@ export const lots = pgTable("lots", {
   // ponderada, igual costPerHead) e/ou atualizado manualmente (ex.: depois de
   // pesar uma amostra do lote). Animais de lote não são cadastrados individualmente,
   // então não têm pesagem própria — este é o único jeito de acompanhar peso do lote.
-  avgWeightKg: numeric("avg_weight_kg", { precision: 6, scale: 2, mode: "number" }),
+  // Precisão de 3 casas decimais (balanças de carcaça costumam informar nesse nível).
+  avgWeightKg: numeric("avg_weight_kg", { precision: 7, scale: 3, mode: "number" }),
   status: lotStatusEnum("status").notNull().default("ativo"),
   notes: text("notes"),
   updatedBy: text("updated_by").references(() => users.id),
@@ -235,7 +236,7 @@ export const weighings = pgTable("weighings", {
   id: uuid(),
   farmId: text("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
   animalId: text("animal_id").notNull().references(() => animals.id, { onDelete: "cascade" }),
-  weightKg: numeric("weight_kg", { precision: 6, scale: 2, mode: "number" }).notNull(),
+  weightKg: numeric("weight_kg", { precision: 7, scale: 3, mode: "number" }).notNull(),
   weighedAt: timestamp("weighed_at", { withTimezone: true }).notNull().defaultNow(),
   notes: text("notes"),
   updatedBy: text("updated_by").references(() => users.id),
@@ -307,7 +308,7 @@ export const purchases = pgTable("purchases", {
   totalValue: numeric("total_value", { precision: 12, scale: 2, mode: "number" }).notNull(),
   // Peso total (kg) da compra por lote, opcional — usado pra entrar na média
   // ponderada de lots.avgWeightKg, mesmo padrão de totalValue/costPerHead.
-  totalWeightKg: numeric("total_weight_kg", { precision: 8, scale: 2, mode: "number" }),
+  totalWeightKg: numeric("total_weight_kg", { precision: 9, scale: 3, mode: "number" }),
   purchaseDate: timestamp("purchase_date", { withTimezone: true }).notNull().defaultNow(),
   updatedBy: text("updated_by").references(() => users.id),
   ...timestamps,
@@ -381,8 +382,8 @@ export const sales = pgTable("sales", {
   // saleMode "vivo_peso", o peso vendido (usado pra calcular o valor por kg no
   // formulário). Guardados como pesos brutos, não o percentual/preço já pronto,
   // pra não duplicar dado nem correr risco de ficar desatualizado.
-  liveWeightKg: numeric("live_weight_kg", { precision: 6, scale: 2, mode: "number" }),
-  carcassWeightKg: numeric("carcass_weight_kg", { precision: 6, scale: 2, mode: "number" }),
+  liveWeightKg: numeric("live_weight_kg", { precision: 7, scale: 3, mode: "number" }),
+  carcassWeightKg: numeric("carcass_weight_kg", { precision: 7, scale: 3, mode: "number" }),
   saleDate: timestamp("sale_date", { withTimezone: true }).notNull().defaultNow(),
   buyer: text("buyer"),
   updatedBy: text("updated_by").references(() => users.id),
@@ -461,8 +462,8 @@ export const abateEvents = pgTable("abate_events", {
   animalId: text("animal_id").references(() => animals.id, { onDelete: "cascade" }),
   lotId: text("lot_id").references(() => lots.id, { onDelete: "set null" }),
   quantity: integer("quantity").notNull().default(1),
-  carcassWeightKg: numeric("carcass_weight_kg", { precision: 6, scale: 2, mode: "number" }),
-  liveWeightKg: numeric("live_weight_kg", { precision: 6, scale: 2, mode: "number" }),
+  carcassWeightKg: numeric("carcass_weight_kg", { precision: 7, scale: 3, mode: "number" }),
+  liveWeightKg: numeric("live_weight_kg", { precision: 7, scale: 3, mode: "number" }),
   eventDate: timestamp("event_date", { withTimezone: true }).notNull().defaultNow(),
   notes: text("notes"),
   saleId: text("sale_id").references(() => sales.id, { onDelete: "set null" }),

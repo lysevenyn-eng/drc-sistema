@@ -136,10 +136,10 @@ export function AbateObitoForm({
                 <Field
                   label={`Peso da carcaça${scope === "lote" ? " total" : ""} (kg, opcional)`}
                 >
-                  <input name="carcassWeightKg" type="number" min={0} step="0.1" className={inputClass} />
+                  <input name="carcassWeightKg" type="number" min={0} step="0.001" className={inputClass} />
                 </Field>
                 <Field label={`Peso vivo${scope === "lote" ? " total" : ""} antes do abate (kg, opcional)`}>
-                  <input name="liveWeightKg" type="number" min={0} step="0.1" className={inputClass} />
+                  <input name="liveWeightKg" type="number" min={0} step="0.001" className={inputClass} />
                 </Field>
               </div>
               <Field label="Data do abate">
