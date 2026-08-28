@@ -8,6 +8,7 @@ import { logoutAction } from "@/app/actions/auth";
 import {
   IconDashboard,
   IconHerd,
+  IconEarTag,
   IconRepro,
   IconScale,
   IconTasks,
@@ -28,12 +29,13 @@ const SIDEBAR_COLLAPSED_KEY = "drc-sidebar-collapsed";
 const ROLE_LABEL: Record<string, string> = {
   admin: "Administrador",
   criador: "Criador",
-  caseiro: "Caseiro",
+  caseiro: "Cabanheiro",
 };
 
 const NAV = [
   { href: "/dashboard", label: "Visão geral", Icon: IconDashboard, adminOnly: false },
   { href: "/rebanho", label: "Rebanho", Icon: IconHerd, adminOnly: false },
+  { href: "/abates-obitos", label: "Abates e óbitos", Icon: IconEarTag, adminOnly: false },
   { href: "/reproducao", label: "Reprodução e P.O.", Icon: IconRepro, adminOnly: false },
   { href: "/pesagem", label: "Pesagem", Icon: IconScale, adminOnly: false },
   { href: "/manejo", label: "Manejo e calendário", Icon: IconTasks, adminOnly: false },

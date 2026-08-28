@@ -3,7 +3,7 @@ import { and, eq, isNull, gte, lte, sql } from "drizzle-orm";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
-import { animals, lots, managementTasks, sales, expenses } from "@/db/schema";
+import { animals, lots, managementTasks, sales, expenses, abateEvents, mortalityEvents } from "@/db/schema";
 import { PageHeader, StatCard, Card, EmptyState } from "@/components/ui";
 import { overallGpd, formatGpd } from "@/lib/gpd";
 import { formatCurrency } from "@/lib/money";
@@ -104,6 +104,25 @@ export default async function DashboardPage() {
       monthExpenses.reduce((sum, e) => sum + e.value, 0)
     : null;
 
+  // Pendências de Abates e óbitos (só admin, ver /abates-obitos): abate sem
+  // venda vinculada ainda (abateEvents.saleId nulo) e óbito sem motivo
+  // confirmado ainda (mortalityEvents.confirmedAt nulo).
+  const [pendingAbateRows, pendingObitoRows] = isAdmin
+    ? await Promise.all([
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(abateEvents)
+          .where(and(eq(abateEvents.farmId, farmId), isNull(abateEvents.saleId))),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(mortalityEvents)
+          .where(and(eq(mortalityEvents.farmId, farmId), isNull(mortalityEvents.confirmedAt))),
+      ])
+    : [[], []];
+  const pendingAbateCount = pendingAbateRows[0]?.count ?? 0;
+  const pendingObitoCount = pendingObitoRows[0]?.count ?? 0;
+  const pendingTotal = pendingAbateCount + pendingObitoCount;
+
   return (
     <div>
       <PageHeader title="Visão geral" description="Resumo do rebanho DRC" />
@@ -128,7 +147,7 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <div className={`mt-6 grid gap-4 ${isAdmin ? "lg:grid-cols-2" : ""}`}>
+      <div className={`mt-6 grid gap-4 ${isAdmin ? "lg:grid-cols-3" : ""}`}>
         <Card className="p-0">
           <Link
             href="/manejo/calendario"
@@ -169,6 +188,23 @@ export default async function DashboardPage() {
                 {formatCurrency(resultadoMes)}
               </p>
               <p className="mt-2 text-xs text-drc-green-900/50">Ver financeiro completo →</p>
+            </Link>
+          </Card>
+        )}
+        {isAdmin && (
+          <Card className="p-0">
+            <Link
+              href="/abates-obitos"
+              className="block rounded-xl p-5 transition hover:bg-drc-green-950/[0.03]"
+            >
+              <h2 className="text-sm font-semibold text-drc-green-950">Pendências</h2>
+              <p className="mt-1 text-xs text-drc-green-900/60">Abates e óbitos aguardando você</p>
+              <p className="mt-3 text-2xl font-semibold text-drc-green-950">{pendingTotal}</p>
+              <p className="mt-2 text-xs text-drc-green-900/50">
+                {pendingTotal === 0
+                  ? "Nenhuma pendência no momento."
+                  : `${pendingAbateCount} abate(s) aguardando venda · ${pendingObitoCount} óbito(s) aguardando confirmação.`}
+              </p>
             </Link>
           </Card>
         )}

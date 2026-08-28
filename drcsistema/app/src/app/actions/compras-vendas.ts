@@ -2,10 +2,19 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { eq, and, sql, gt } from "drizzle-orm";
+import { eq, and, or, sql, gt, isNull } from "drizzle-orm";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { purchases, expenses, sales, lots, animals, accountsPayable, accountsReceivable } from "@/db/schema";
+import {
+  purchases,
+  expenses,
+  sales,
+  lots,
+  animals,
+  accountsPayable,
+  accountsReceivable,
+  abateEvents,
+} from "@/db/schema";
 
 type Sex = "macho" | "femea";
 
@@ -567,7 +576,11 @@ export async function createSaleAction(formData: FormData) {
     const animal = await db.query.animals.findFirst({
       where: and(eq(animals.id, animalId), eq(animals.farmId, session.farmId)),
     });
-    if (!animal || animal.status !== "ativo") {
+    // "abatido" também pode ser vendido — é um animal que já saiu do rebanho
+    // num abate registrado antes (ver registerAbateAction) e está esperando
+    // só o lançamento da venda. Diferente de "ativo", o lote dele já foi
+    // baixado no momento do abate, não aqui na venda (ver abaixo).
+    if (!animal || (animal.status !== "ativo" && animal.status !== "abatido")) {
       redirect("/compras-vendas/vendas/novo?saleError=status");
     }
 
@@ -590,7 +603,10 @@ export async function createSaleAction(formData: FormData) {
         })
         .where(eq(animals.id, animalId));
 
-      if (animal.lotId) {
+      // Só baixa o lote aqui se o animal ainda estava "ativo" — um "abatido"
+      // já teve o lote baixado no momento do abate (ver registerAbateAction);
+      // baixar de novo aqui duplicaria o desconto.
+      if (animal.lotId && animal.status === "ativo") {
         await tx
           .update(lots)
           .set({ quantity: sql`greatest(${lots.quantity} - 1, 0)`, updatedAt: new Date() })
@@ -618,6 +634,22 @@ export async function createSaleAction(formData: FormData) {
         })
         .returning({ id: sales.id });
 
+      // Resolve a pendência do abate (se veio de um) vinculando essa venda ao
+      // registro de abate mais recente ainda sem venda — ver comentário na
+      // tabela abateEvents (schema.ts) e deleteSaleAction (desfaz o vínculo).
+      if (animal.status === "abatido") {
+        const pendingAbate = await tx.query.abateEvents.findFirst({
+          where: and(eq(abateEvents.animalId, animalId), isNull(abateEvents.saleId)),
+          orderBy: (e, { desc }) => [desc(e.createdAt)],
+        });
+        if (pendingAbate) {
+          await tx
+            .update(abateEvents)
+            .set({ saleId: newSale.id, updatedAt: new Date() })
+            .where(eq(abateEvents.id, pendingAbate.id));
+        }
+      }
+
       if (isParcelado) {
         await tx.insert(accountsReceivable).values(
           buildInstallments(totalValue, installmentsCount!, new Date(firstDueDateStr)).map((row) => ({
@@ -635,6 +667,8 @@ export async function createSaleAction(formData: FormData) {
     revalidatePath(`/rebanho/animais/${animalId}`);
     revalidatePath("/financeiro");
     revalidatePath("/manejo/calendario");
+    revalidatePath("/abates-obitos");
+    revalidatePath("/dashboard");
     redirect("/compras-vendas/vendas");
   }
 }
@@ -660,22 +694,38 @@ export async function deleteSaleAction(formData: FormData) {
 
     if (sale.saleType === "individual" && sale.animalId) {
       const animal = await tx.query.animals.findFirst({ where: eq(animals.id, sale.animalId) });
-      if (animal && animal.status === "vendido") {
-        await tx
-          .update(animals)
-          .set({
-            status: "ativo",
-            statusChangedAt: null,
-            updatedBy: session.userId,
-            updatedAt: new Date(),
-          })
-          .where(eq(animals.id, sale.animalId));
+      // Essa venda veio de um abate pendente (ver createSaleAction)? Se sim, o
+      // animal volta pro status "abatido" — não "ativo" — porque ele continua
+      // fora do rebanho, só a venda em si é que está sendo desfeita. A
+      // quantidade do lote não é devolvida aqui: ela já não tinha sido
+      // devolvida na venda (foi baixada no abate, ver registerAbateAction).
+      const linkedAbate = await tx.query.abateEvents.findFirst({
+        where: eq(abateEvents.saleId, saleId),
+      });
 
-        if (sale.lotId) {
+      if (animal && animal.status === "vendido") {
+        if (linkedAbate) {
           await tx
-            .update(lots)
-            .set({ quantity: sql`${lots.quantity} + 1`, updatedAt: new Date() })
-            .where(eq(lots.id, sale.lotId));
+            .update(animals)
+            .set({ status: "abatido", updatedBy: session.userId, updatedAt: new Date() })
+            .where(eq(animals.id, sale.animalId));
+        } else {
+          await tx
+            .update(animals)
+            .set({
+              status: "ativo",
+              statusChangedAt: null,
+              updatedBy: session.userId,
+              updatedAt: new Date(),
+            })
+            .where(eq(animals.id, sale.animalId));
+
+          if (sale.lotId) {
+            await tx
+              .update(lots)
+              .set({ quantity: sql`${lots.quantity} + 1`, updatedAt: new Date() })
+              .where(eq(lots.id, sale.lotId));
+          }
         }
       }
     }
@@ -685,5 +735,7 @@ export async function deleteSaleAction(formData: FormData) {
 
   revalidatePath("/compras-vendas/vendas");
   revalidatePath("/rebanho");
+  revalidatePath("/abates-obitos");
+  revalidatePath("/dashboard");
   if (sale.animalId) revalidatePath(`/rebanho/animais/${sale.animalId}`);
 }

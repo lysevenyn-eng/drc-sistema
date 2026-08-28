@@ -21,7 +21,7 @@ export const roleEnum = pgEnum("role", ["admin", "criador", "caseiro"]);
 export const userStatusEnum = pgEnum("user_status", ["pendente", "aprovado", "rejeitado"]);
 export const sexEnum = pgEnum("sex", ["macho", "femea"]);
 export const compositionEnum = pgEnum("composition", ["macho", "femea", "misto"]);
-export const animalStatusEnum = pgEnum("animal_status", ["ativo", "vendido", "morto"]);
+export const animalStatusEnum = pgEnum("animal_status", ["ativo", "vendido", "morto", "abatido"]);
 export const lotStatusEnum = pgEnum("lot_status", ["ativo", "encerrado"]);
 export const reproEventTypeEnum = pgEnum("repro_event_type", [
   "cobertura",
@@ -420,17 +420,54 @@ export const accountsReceivableRelations = relations(accountsReceivable, ({ one 
 }));
 
 // ---------- Óbitos (baixa por morte) ----------
+// reason agora é opcional e confirmedAt é nulo quando quem registrou não é
+// admin (ex.: cabanheiro, pela tela /abates-obitos) — fica pendente até um
+// admin confirmar o motivo definitivo (ver confirmDeathReasonAction). Quando
+// o próprio admin registra o óbito, confirmedAt já entra preenchido (ver
+// registerDeathAction) — não há ninguém mais pra confirmar depois.
 export const mortalityEvents = pgTable("mortality_events", {
   id: uuid(),
   farmId: text("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
   animalId: text("animal_id").references(() => animals.id, { onDelete: "set null" }),
   lotId: text("lot_id").references(() => lots.id, { onDelete: "set null" }),
   quantity: integer("quantity").notNull().default(1),
-  reason: text("reason").notNull(), // motivo obrigatório
+  reason: text("reason"),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
   eventDate: timestamp("event_date", { withTimezone: true }).notNull().defaultNow(),
   updatedBy: text("updated_by").references(() => users.id),
   ...timestamps,
 });
+
+export const mortalityEventsRelations = relations(mortalityEvents, ({ one }) => ({
+  animal: one(animals, { fields: [mortalityEvents.animalId], references: [animals.id] }),
+}));
+
+// ---------- Abates ----------
+// Registrado (tipicamente pelo cabanheiro, na tela /abates-obitos) no momento
+// do abate — dá baixa no animal (status "abatido") na hora, mas fica pendente
+// (saleId nulo) até o admin registrar a venda correspondente em Compras e
+// vendas. createSaleAction vincula saleId ao criar a venda pra esse animal,
+// resolvendo a pendência; excluir essa venda desfaz o vínculo (onDelete: set
+// null abaixo) e devolve o animal pro status "abatido" (ver deleteSaleAction).
+export const abateEvents = pgTable("abate_events", {
+  id: uuid(),
+  farmId: text("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
+  animalId: text("animal_id").notNull().references(() => animals.id, { onDelete: "cascade" }),
+  lotId: text("lot_id").references(() => lots.id, { onDelete: "set null" }),
+  carcassWeightKg: numeric("carcass_weight_kg", { precision: 6, scale: 2, mode: "number" }),
+  liveWeightKg: numeric("live_weight_kg", { precision: 6, scale: 2, mode: "number" }),
+  eventDate: timestamp("event_date", { withTimezone: true }).notNull().defaultNow(),
+  notes: text("notes"),
+  saleId: text("sale_id").references(() => sales.id, { onDelete: "set null" }),
+  updatedBy: text("updated_by").references(() => users.id),
+  ...timestamps,
+});
+
+export const abateEventsRelations = relations(abateEvents, ({ one }) => ({
+  animal: one(animals, { fields: [abateEvents.animalId], references: [animals.id] }),
+  lot: one(lots, { fields: [abateEvents.lotId], references: [lots.id] }),
+  sale: one(sales, { fields: [abateEvents.saleId], references: [sales.id] }),
+}));
 
 // ---------- Financeiro / Carteira ----------
 export const walletAccounts = pgTable("wallet_accounts", {

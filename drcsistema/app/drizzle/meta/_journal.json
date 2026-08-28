@@ -71,6 +71,13 @@
       "when": 1787922801891,
       "tag": "0009_adorable_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787927782308,
+      "tag": "0010_green_sinister_six",
+      "breakpoints": true
     }
   ]
 }

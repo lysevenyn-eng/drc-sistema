@@ -8,6 +8,7 @@ import {
   lots,
   animals,
   mortalityEvents,
+  abateEvents,
   reproductionEvents,
   weighings,
   managementTasks,
@@ -16,6 +17,7 @@ import { PageHeader, Card, Badge } from "@/components/ui";
 import {
   updateAnimalAction,
   registerDeathAction,
+  confirmDeathReasonAction,
   reactivateAnimalAction,
   deleteAnimalAction,
 } from "@/app/actions/rebanho";
@@ -72,7 +74,7 @@ export default async function AnimalDetailPage({
   });
   if (!animal) notFound();
 
-  const [farmBreeds, activeLots, mothers, fathers, deaths, reproHistory, weighHistory, tasks] = await Promise.all([
+  const [farmBreeds, activeLots, mothers, fathers, deaths, abateEvent, reproHistory, weighHistory, tasks] = await Promise.all([
     db.query.breeds.findMany({ where: eq(breeds.farmId, farmId), orderBy: (b, { asc }) => [asc(b.name)] }),
     db.query.lots.findMany({ where: and(eq(lots.farmId, farmId), eq(lots.status, "ativo")) }),
     db.query.animals.findMany({
@@ -95,6 +97,12 @@ export default async function AnimalDetailPage({
       where: eq(mortalityEvents.animalId, id),
       orderBy: (m, { desc }) => [desc(m.eventDate)],
     }),
+    animal.status === "abatido"
+      ? db.query.abateEvents.findFirst({
+          where: eq(abateEvents.animalId, id),
+          orderBy: (e, { desc }) => [desc(e.createdAt)],
+        })
+      : Promise.resolve(null),
     animal.sex === "femea"
       ? db.query.reproductionEvents.findMany({
           where: eq(reproductionEvents.motherId, id),
@@ -127,8 +135,24 @@ export default async function AnimalDetailPage({
         description="Editar cadastro do animal"
         showBack
         action={
-          <Badge tone={animal.status === "ativo" ? "green" : animal.status === "vendido" ? "gold" : "red"}>
-            {animal.status === "ativo" ? "Ativo" : animal.status === "vendido" ? "Vendido" : "Morto"}
+          <Badge
+            tone={
+              animal.status === "ativo"
+                ? "green"
+                : animal.status === "vendido"
+                  ? "gold"
+                  : animal.status === "abatido"
+                    ? "neutral"
+                    : "red"
+            }
+          >
+            {animal.status === "ativo"
+              ? "Ativo"
+              : animal.status === "vendido"
+                ? "Vendido"
+                : animal.status === "abatido"
+                  ? "Abatido"
+                  : "Morto"}
           </Badge>
         }
       />
@@ -262,12 +286,20 @@ export default async function AnimalDetailPage({
               <form action={registerDeathAction} className="space-y-3">
                 <input type="hidden" name="animalId" value={animal.id} />
                 <p className="text-xs text-drc-green-900/60">
-                  Registrar óbito — o motivo é obrigatório. Se o animal estiver em um lote, a
-                  quantidade do lote será reduzida em 1.
+                  Registrar óbito
+                  {isAdmin
+                    ? " — o motivo é obrigatório."
+                    : " — se souber o motivo, informe; senão pode deixar em branco, o administrador confirma depois."}{" "}
+                  Se o animal estiver em um lote, a quantidade do lote será reduzida em 1. Para
+                  registrar um abate, use a tela{" "}
+                  <Link href="/abates-obitos" className="underline underline-offset-2">
+                    Abates e óbitos
+                  </Link>
+                  .
                 </p>
                 <textarea
                   name="reason"
-                  required
+                  required={isAdmin}
                   rows={3}
                   placeholder="Motivo do óbito (ex.: doença, predador, complicação no parto...)"
                   className={inputClass}
@@ -279,15 +311,76 @@ export default async function AnimalDetailPage({
                   Registrar óbito
                 </button>
               </form>
+            ) : animal.status === "abatido" ? (
+              <div className="space-y-3">
+                <p className="text-sm text-drc-green-900/80">
+                  Abatido em{" "}
+                  {abateEvent ? new Date(abateEvent.eventDate).toLocaleDateString("pt-BR") : "—"}
+                  {abateEvent?.carcassWeightKg != null ? ` · carcaça ${abateEvent.carcassWeightKg} kg` : ""}
+                  {abateEvent?.liveWeightKg != null ? ` · vivo ${abateEvent.liveWeightKg} kg` : ""}
+                </p>
+                {abateEvent?.notes && (
+                  <p className="text-xs text-drc-green-900/60">{abateEvent.notes}</p>
+                )}
+                <p className="text-xs font-medium text-drc-green-900">
+                  Aguardando registro da venda.
+                </p>
+                {isAdmin && (
+                  <Link
+                    href={`/compras-vendas/vendas/novo?animalId=${animal.id}`}
+                    className="block w-full rounded-lg bg-drc-gold-500 px-3 py-2 text-center text-sm font-semibold text-drc-green-950 hover:bg-drc-gold-400"
+                  >
+                    Registrar venda
+                  </Link>
+                )}
+                <form action={reactivateAnimalAction}>
+                  <input type="hidden" name="animalId" value={animal.id} />
+                  <button
+                    type="submit"
+                    className="w-full rounded-lg border border-drc-green-700 px-3 py-2 text-sm font-medium text-drc-green-900 hover:bg-drc-green-950/5"
+                  >
+                    Desfazer abate (reativar animal)
+                  </button>
+                </form>
+              </div>
             ) : (
               <div className="space-y-3">
                 <p className="text-sm text-drc-green-900/80">
                   {animal.statusReason || "Sem motivo registrado."}
                 </p>
+                {animal.status === "morto" && deaths[0] && !deaths[0].confirmedAt && (
+                  <Badge tone="gold">
+                    {isAdmin
+                      ? "Motivo ainda não confirmado"
+                      : "Aguardando confirmação do motivo pelo administrador"}
+                  </Badge>
+                )}
                 {animal.statusChangedAt && (
                   <p className="text-xs text-drc-green-900/50">
                     Alterado em {new Date(animal.statusChangedAt).toLocaleString("pt-BR")}
                   </p>
+                )}
+                {isAdmin && animal.status === "morto" && deaths[0] && !deaths[0].confirmedAt && (
+                  <form
+                    action={confirmDeathReasonAction}
+                    className="space-y-2 rounded-lg bg-drc-green-950/5 p-3"
+                  >
+                    <input type="hidden" name="eventId" value={deaths[0].id} />
+                    <textarea
+                      name="reason"
+                      required
+                      rows={2}
+                      defaultValue={deaths[0].reason ?? ""}
+                      placeholder="Confirmar motivo do óbito"
+                      className={inputClass}
+                    />
+                    <button
+                      type="submit"
+                      className="w-full rounded-lg bg-drc-gold-500 px-3 py-2 text-sm font-semibold text-drc-green-950 hover:bg-drc-gold-400"
+                    >
+                      Confirmar motivo
+                    </button>
+                  </form>
                 )}
                 <form action={reactivateAnimalAction}>
                   <input type="hidden" name="animalId" value={animal.id} />

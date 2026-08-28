@@ -2,10 +2,18 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { eq, and, or, sql } from "drizzle-orm";
+import { eq, and, or, sql, isNull } from "drizzle-orm";
 import { requireSession, requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { animals, lots, breeds, mortalityEvents, weighings, reproductionEvents } from "@/db/schema";
+import {
+  animals,
+  lots,
+  breeds,
+  mortalityEvents,
+  abateEvents,
+  weighings,
+  reproductionEvents,
+} from "@/db/schema";
 
 async function farmSession() {
   const session = await requireSession();
@@ -192,12 +200,20 @@ export async function updateAnimalAction(formData: FormData) {
   revalidatePath(`/rebanho/animais/${animalId}`);
 }
 
-/** Dar baixa por óbito — motivo é obrigatório. Reduz o lote vinculado, se houver. */
+/**
+ * Dar baixa por óbito. O motivo é obrigatório só quando quem registra é admin
+ * — nesse caso não tem mais ninguém pra confirmar depois, então já entra
+ * confirmado. Quando é o cabanheiro ou o criador (ex.: pela tela
+ * /abates-obitos), o motivo é opcional e o registro fica pendente até um
+ * admin confirmar (ver confirmDeathReasonAction). Reduz o lote vinculado, se
+ * houver, imediatamente — a baixa em si não espera confirmação, só o motivo.
+ */
 export async function registerDeathAction(formData: FormData) {
   const session = await farmSession();
   const animalId = str(formData.get("animalId"));
-  const reason = str(formData.get("reason"));
-  if (!animalId || !reason) return;
+  const reason = optStr(formData.get("reason"));
+  const isAdmin = session.role === "admin";
+  if (!animalId || (isAdmin && !reason)) return;
 
   const animal = await db.query.animals.findFirst({
     where: and(eq(animals.id, animalId), eq(animals.farmId, session.farmId)),
@@ -222,6 +238,7 @@ export async function registerDeathAction(formData: FormData) {
       lotId: animal.lotId,
       quantity: 1,
       reason,
+      confirmedAt: isAdmin ? new Date() : null,
       updatedBy: session.userId,
     });
 
@@ -235,6 +252,101 @@ export async function registerDeathAction(formData: FormData) {
 
   revalidatePath("/rebanho");
   revalidatePath(`/rebanho/animais/${animalId}`);
+  revalidatePath("/abates-obitos");
+  revalidatePath("/dashboard");
+}
+
+/** Admin confirma o motivo definitivo de um óbito registrado por outra pessoa (fica pendente até então). */
+export async function confirmDeathReasonAction(formData: FormData) {
+  const session = await requireAdmin();
+  if (!session.farmId) return;
+  const eventId = str(formData.get("eventId"));
+  const reason = str(formData.get("reason"));
+  if (!eventId || !reason) return;
+
+  const event = await db.query.mortalityEvents.findFirst({
+    where: and(eq(mortalityEvents.id, eventId), eq(mortalityEvents.farmId, session.farmId)),
+  });
+  if (!event) return;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(mortalityEvents)
+      .set({ reason, confirmedAt: new Date(), updatedBy: session.userId, updatedAt: new Date() })
+      .where(eq(mortalityEvents.id, eventId));
+
+    if (event.animalId) {
+      await tx
+        .update(animals)
+        .set({ statusReason: reason, updatedAt: new Date() })
+        .where(eq(animals.id, event.animalId));
+    }
+  });
+
+  revalidatePath("/abates-obitos");
+  revalidatePath("/rebanho");
+  revalidatePath("/dashboard");
+  if (event.animalId) revalidatePath(`/rebanho/animais/${event.animalId}`);
+}
+
+/**
+ * Registrar abate — normalmente pelo cabanheiro, na tela /abates-obitos. Dá
+ * baixa no animal na hora (status "abatido", sai da contagem do lote) e fica
+ * pendente até o admin registrar a venda em Compras e vendas (ver
+ * createSaleAction, que resolve a pendência vinculando abateEvents.saleId).
+ * Peso de carcaça é opcional aqui — quem bate na balança nem sempre é quem
+ * registra, dá pra completar depois direto na venda.
+ */
+export async function registerAbateAction(formData: FormData) {
+  const session = await farmSession();
+  const animalId = str(formData.get("animalId"));
+  if (!animalId) return;
+
+  const animal = await db.query.animals.findFirst({
+    where: and(eq(animals.id, animalId), eq(animals.farmId, session.farmId)),
+  });
+  if (!animal || animal.status !== "ativo") return;
+
+  const carcassWeightKg = optNum(formData.get("carcassWeightKg"));
+  const liveWeightKg = optNum(formData.get("liveWeightKg"));
+  const notes = optStr(formData.get("notes"));
+  const eventDateStr = optStr(formData.get("eventDate"));
+  const eventDate = eventDateStr ? new Date(eventDateStr) : new Date();
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(animals)
+      .set({
+        status: "abatido",
+        statusChangedAt: new Date(),
+        updatedBy: session.userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(animals.id, animalId));
+
+    await tx.insert(abateEvents).values({
+      farmId: session.farmId,
+      animalId,
+      lotId: animal.lotId,
+      carcassWeightKg,
+      liveWeightKg,
+      eventDate,
+      notes,
+      updatedBy: session.userId,
+    });
+
+    if (animal.lotId) {
+      await tx
+        .update(lots)
+        .set({ quantity: sql`greatest(${lots.quantity} - 1, 0)`, updatedAt: new Date() })
+        .where(eq(lots.id, animal.lotId));
+    }
+  });
+
+  revalidatePath("/rebanho");
+  revalidatePath(`/rebanho/animais/${animalId}`);
+  revalidatePath("/abates-obitos");
+  revalidatePath("/dashboard");
 }
 
 /** Reverte a baixa (reativa o animal) — cobre "excluir óbito reativa o animal". */
@@ -250,6 +362,7 @@ export async function reactivateAnimalAction(formData: FormData) {
 
   await db.transaction(async (tx) => {
     const wasMorto = animal.status === "morto";
+    const wasAbatido = animal.status === "abatido";
 
     await tx
       .update(animals)
@@ -277,10 +390,32 @@ export async function reactivateAnimalAction(formData: FormData) {
         }
       }
     }
+
+    // Abate ainda não vendido (saleId nulo) — desfaz igual ao óbito acima. Um
+    // abate já vinculado a uma venda não chega aqui: nesse caso o status já é
+    // "vendido", não "abatido" (ver createSaleAction), e a forma de desfazer é
+    // excluir a venda em Compras e vendas.
+    if (wasAbatido) {
+      const lastAbate = await tx.query.abateEvents.findFirst({
+        where: and(eq(abateEvents.animalId, animalId), isNull(abateEvents.saleId)),
+        orderBy: (e, { desc }) => [desc(e.createdAt)],
+      });
+      if (lastAbate) {
+        await tx.delete(abateEvents).where(eq(abateEvents.id, lastAbate.id));
+        if (animal.lotId) {
+          await tx
+            .update(lots)
+            .set({ quantity: sql`${lots.quantity} + 1`, updatedAt: new Date() })
+            .where(eq(lots.id, animal.lotId));
+        }
+      }
+    }
   });
 
   revalidatePath("/rebanho");
   revalidatePath(`/rebanho/animais/${animalId}`);
+  revalidatePath("/abates-obitos");
+  revalidatePath("/dashboard");
 }
 
 // ---------- Exclusão de dados ----------

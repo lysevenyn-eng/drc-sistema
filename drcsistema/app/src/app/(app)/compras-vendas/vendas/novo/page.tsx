@@ -1,7 +1,7 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, or, inArray } from "drizzle-orm";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { lots, animals, purchases } from "@/db/schema";
+import { lots, animals, purchases, abateEvents } from "@/db/schema";
 import { PageHeader, Card } from "@/components/ui";
 import { createSaleAction } from "@/app/actions/compras-vendas";
 import { VendaForm } from "@/components/venda-form";
@@ -14,12 +14,16 @@ const ERROR_MESSAGES: Record<string, string> = {
 export default async function NovaVendaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saleError?: string }>;
+  searchParams: Promise<{ saleError?: string; animalId?: string }>;
 }) {
   const session = await requireAdmin();
   const farmId = session.farmId;
-  const { saleError } = await searchParams;
+  const { saleError, animalId: preselectAnimalId } = await searchParams;
 
+  // Animais "ativo" (venda direta) e "abatido" (abate registrado antes na
+  // tela Abates e óbitos, esperando só a venda — ver registerAbateAction e
+  // createSaleAction) aparecem juntos aqui; o rótulo de cada um no formulário
+  // deixa claro qual é qual.
   const [activeLots, activeAnimals] = farmId
     ? await Promise.all([
         db.query.lots.findMany({
@@ -27,7 +31,10 @@ export default async function NovaVendaPage({
           orderBy: (l, { asc }) => [asc(l.name)],
         }),
         db.query.animals.findMany({
-          where: and(eq(animals.farmId, farmId), eq(animals.status, "ativo")),
+          where: and(
+            eq(animals.farmId, farmId),
+            or(eq(animals.status, "ativo"), eq(animals.status, "abatido"))
+          ),
           with: {
             lot: true,
             breed: true,
@@ -37,6 +44,17 @@ export default async function NovaVendaPage({
         }),
       ])
     : [[], []];
+
+  // Se veio de "Registrar venda" a partir de um abate pendente, busca o
+  // registro de abate pra pré-preencher peso de carcaça/vivo no formulário —
+  // a pessoa ainda pode ajustar antes de salvar.
+  const pendingAbate =
+    farmId && preselectAnimalId
+      ? await db.query.abateEvents.findFirst({
+          where: and(eq(abateEvents.animalId, preselectAnimalId), eq(abateEvents.farmId, farmId)),
+          orderBy: (e, { desc }) => [desc(e.createdAt)],
+        })
+      : null;
 
   // O nome do lote nem sempre ajuda a identificar o animal na hora da venda —
   // um lote novo se mistura com o resto do rebanho, e a maioria dos animais
@@ -72,6 +90,7 @@ export default async function NovaVendaPage({
       birthDate: a.birthDate,
       purchaseDate: purchaseDateByAnimalId.get(a.id) ?? null,
       latestWeightKg: latestWeighing?.weightKg ?? null,
+      pendingAbate: a.status === "abatido",
     };
   });
 
@@ -93,6 +112,10 @@ export default async function NovaVendaPage({
           animals={animalOptions}
           blendedPoolQuantity={blendedPoolQuantity}
           action={createSaleAction}
+          preselectAnimalId={preselectAnimalId}
+          presetSaleMode={pendingAbate ? "carcaca" : undefined}
+          presetCarcassWeightKg={pendingAbate?.carcassWeightKg ?? null}
+          presetLiveWeightKg={pendingAbate?.liveWeightKg ?? null}
         />
       </Card>
     </div>

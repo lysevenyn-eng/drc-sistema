@@ -112,6 +112,13 @@ export const IconReport = (p: IconProps) => (
   </Base>
 );
 
+export const IconEarTag = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M3 12L9 5h9a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H9l-6-2Z" />
+    <circle cx="15.5" cy="10.5" r="1.1" fill="currentColor" stroke="none" />
+  </Base>
+);
+
 export const IconChevronLeft = (p: IconProps) => (
   <Base {...p}>
     <path d="M15 6l-6 6 6 6" />

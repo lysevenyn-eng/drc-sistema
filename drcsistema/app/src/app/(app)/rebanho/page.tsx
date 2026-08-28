@@ -14,8 +14,8 @@ import {
 import { ConfirmForm } from "@/components/confirm-form";
 import { overallGpd, formatGpd } from "@/lib/gpd";
 
-const STATUS_TONE = { ativo: "green", vendido: "gold", morto: "red" } as const;
-const STATUS_LABEL = { ativo: "Ativo", vendido: "Vendido", morto: "Morto" } as const;
+const STATUS_TONE = { ativo: "green", vendido: "gold", morto: "red", abatido: "neutral" } as const;
+const STATUS_LABEL = { ativo: "Ativo", vendido: "Vendido", morto: "Morto", abatido: "Abatido" } as const;
 
 export default async function RebanhoPage() {
   const session = await requireSession();

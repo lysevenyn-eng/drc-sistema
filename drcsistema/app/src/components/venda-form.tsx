@@ -12,6 +12,7 @@ type AnimalOption = {
   birthDate: string | Date | null;
   purchaseDate: string | Date | null;
   latestWeightKg: number | null;
+  pendingAbate?: boolean;
 };
 
 const SALE_MODE_LABELS: Record<string, string> = {
@@ -27,6 +28,7 @@ const SALE_MODE_LABELS: Record<string, string> = {
 // mudam com a mistura. O lote ainda aparece por último, quando existir.
 function animalOptionLabel(a: AnimalOption) {
   const parts = [`${a.tag}${a.name ? ` — ${a.name}` : ""}`];
+  if (a.pendingAbate) parts.push("abatido, aguardando venda");
   parts.push(a.breedName ?? "raça não informada");
   parts.push(a.latestWeightKg != null ? `${a.latestWeightKg} kg` : "peso não registrado");
   if (a.purchaseDate) {
@@ -45,17 +47,31 @@ export function VendaForm({
   animals,
   blendedPoolQuantity,
   action,
+  preselectAnimalId,
+  presetSaleMode,
+  presetCarcassWeightKg,
+  presetLiveWeightKg,
 }: {
   lots: LotOption[];
   animals: AnimalOption[];
   blendedPoolQuantity: number;
   action: (formData: FormData) => void;
+  preselectAnimalId?: string;
+  presetSaleMode?: "vivo_cabeca" | "vivo_peso" | "carcaca" | "outra";
+  presetCarcassWeightKg?: number | null;
+  presetLiveWeightKg?: number | null;
 }) {
-  const [saleKind, setSaleKind] = useState<"lote" | "individual">("lote");
-  const [saleMode, setSaleMode] = useState<"vivo_cabeca" | "vivo_peso" | "carcaca" | "outra">("vivo_cabeca");
+  const [saleKind, setSaleKind] = useState<"lote" | "individual">(
+    preselectAnimalId ? "individual" : "lote"
+  );
+  const [saleMode, setSaleMode] = useState<"vivo_cabeca" | "vivo_peso" | "carcaca" | "outra">(
+    presetSaleMode ?? "vivo_cabeca"
+  );
   const [paymentType, setPaymentType] = useState<"a_vista" | "parcelado">("a_vista");
-  const [liveWeight, setLiveWeight] = useState("");
-  const [carcassWeight, setCarcassWeight] = useState("");
+  const [liveWeight, setLiveWeight] = useState(presetLiveWeightKg != null ? String(presetLiveWeightKg) : "");
+  const [carcassWeight, setCarcassWeight] = useState(
+    presetCarcassWeightKg != null ? String(presetCarcassWeightKg) : ""
+  );
   const [quantity, setQuantity] = useState("");
   const [totalValue, setTotalValue] = useState("");
   const [pricePerHead, setPricePerHead] = useState("");
@@ -150,7 +166,7 @@ export function VendaForm({
         </div>
       ) : (
         <Field label="Animal">
-          <select name="animalId" required defaultValue="" className={inputClass}>
+          <select name="animalId" required defaultValue={preselectAnimalId ?? ""} className={inputClass}>
             <option value="" disabled>
               Selecione o animal
             </option>
@@ -163,8 +179,15 @@ export function VendaForm({
           <p className="mt-1 text-xs text-drc-green-900/60">
             Cada animal mostra raça, último peso registrado e data de entrada na fazenda (compra
             ou nascimento) — como o lote se mistura com o tempo, essas informações ajudam mais a
-            identificar o animal certo do que o nome do lote sozinho.
+            identificar o animal certo do que o nome do lote sozinho. Animais marcados
+            &quot;abatido, aguardando venda&quot; vieram de um abate já registrado em Abates e
+            óbitos.
           </p>
+          {(presetCarcassWeightKg != null || presetLiveWeightKg != null) && (
+            <p className="mt-1.5 rounded-lg bg-drc-gold-500/10 px-3 py-2 text-xs text-drc-green-900">
+              Peso pré-preenchido a partir do registro de abate — confira antes de salvar.
+            </p>
+          )}
         </Field>
       )}
 
