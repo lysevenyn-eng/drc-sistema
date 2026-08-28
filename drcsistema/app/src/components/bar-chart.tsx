@@ -1,4 +1,4 @@
-const VB_W = 300;
+const VB_W = 450;
 const VB_H = 130;
 const PAD_TOP = 20;
 const PAD_BOTTOM = 24;
@@ -12,8 +12,10 @@ export type BarChartDatum = { label: string; value: number };
  * biblioteca de gráficos no projeto — mesma linha do MiniCalendario, que
  * também é 100% "hand-rolled"). viewBox fixo com preserveAspectRatio padrão
  * (uniforme) evita distorcer texto/traços quando o container é esticado por
- * `w-full` em telas de larguras diferentes. Não interativo, então roda como
- * server component (sem "use client").
+ * `w-full` em telas de larguras diferentes. A altura fica travada em CSS
+ * (h-44) — sem isso, o SVG deriva a altura só da proporção do viewBox, e num
+ * card largo (telas grandes) o gráfico ficava enorme, ocupando a tela quase
+ * inteira. Não interativo, então roda como server component (sem "use client").
  */
 export function BarChart({
   data,
@@ -34,7 +36,12 @@ export function BarChart({
   const barW = Math.min(slot * 0.5, 34);
 
   return (
-    <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="w-full" role="img" aria-label="Gráfico de barras">
+    <svg
+      viewBox={`0 0 ${VB_W} ${VB_H}`}
+      className="h-44 w-full"
+      role="img"
+      aria-label="Gráfico de barras"
+    >
       <line
         x1="0"
         y1={BASE_Y}

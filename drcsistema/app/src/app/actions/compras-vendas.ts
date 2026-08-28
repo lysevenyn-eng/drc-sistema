@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, gt } from "drizzle-orm";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/db";
 import { purchases, expenses, sales, lots, animals, accountsPayable } from "@/db/schema";
@@ -357,11 +357,18 @@ export async function deleteExpenseAction(formData: FormData) {
 // ---------- Vendas ----------
 /**
  * Registra uma venda, por lote ou individual. Por lote: reduz a quantidade
- * do lote (bloqueia se pedir mais do que o saldo disponível). Individual:
- * marca o animal como "Vendido" e, se ele estiver vinculado a um lote,
- * reduz 1 unidade daquele lote também — mesmo padrão já usado no óbito.
- * Custo e lucro são calculados a partir do custo por cabeça do lote
- * vinculado (quando existir); sem lote vinculado, ficam em branco.
+ * do lote (bloqueia se pedir mais do que o saldo disponível) — ou, no modo
+ * "vários lotes misturados" (lotId === "__misto__", pra quando não dá pra
+ * saber de qual lote exato o animal saiu porque ele já se misturou com
+ * outros), reparte a baixa entre todos os lotes ativos da fazenda (mais
+ * antigo primeiro) usando um custo médio ponderado entre eles — por isso
+ * pode gerar mais de uma linha em `sales` (uma por lote realmente afetado,
+ * todas com a mesma data/comprador), o que mantém o saldo de cada lote
+ * certo e a venda revertível lote a lote se for excluída. Individual: marca
+ * o animal como "Vendido" e, se ele estiver vinculado a um lote, reduz 1
+ * unidade daquele lote também — mesmo padrão já usado no óbito. Custo e
+ * lucro são calculados a partir do custo por cabeça do lote vinculado
+ * (quando existir); sem lote vinculado, ficam em branco.
  */
 export async function createSaleAction(formData: FormData) {
   const session = await adminFarmSession();
@@ -385,6 +392,84 @@ export async function createSaleAction(formData: FormData) {
     const lotId = str(formData.get("lotId"));
     const quantity = optNum(formData.get("quantity"));
     if (!lotId || !quantity || quantity <= 0) return;
+
+    if (lotId === "__misto__") {
+      const pool = await db.query.lots.findMany({
+        where: and(eq(lots.farmId, session.farmId), eq(lots.status, "ativo"), gt(lots.quantity, 0)),
+        orderBy: (l, { asc }) => [asc(l.createdAt)],
+      });
+      const totalPoolQty = pool.reduce((sum, l) => sum + l.quantity, 0);
+      if (quantity > totalPoolQty) {
+        redirect("/compras-vendas/vendas/novo?saleError=saldo");
+      }
+
+      // Custo médio ponderado só entre os lotes que têm custo por cabeça
+      // registrado — um lote sem custo conta pro saldo de cabeças, mas não
+      // entra na média (não tem valor pra ponderar).
+      const lotsWithCost = pool.filter((l) => l.costPerHead != null);
+      const costWeight = lotsWithCost.reduce((sum, l) => sum + l.quantity, 0);
+      const blendedCostPerHead =
+        costWeight > 0
+          ? lotsWithCost.reduce((sum, l) => sum + l.quantity * (l.costPerHead as number), 0) / costWeight
+          : null;
+
+      // Reparte a quantidade vendida entre os lotes (mais antigo primeiro) —
+      // a ordem não afeta o custo (a mesma média vale pra venda toda), é só
+      // pra saber de qual lote baixar quantidade.
+      const chunks: { lotId: string; qty: number }[] = [];
+      let remaining = quantity;
+      for (const poolLot of pool) {
+        if (remaining <= 0) break;
+        const take = Math.min(poolLot.quantity, remaining);
+        if (take <= 0) continue;
+        chunks.push({ lotId: poolLot.id, qty: take });
+        remaining -= take;
+      }
+
+      const unitValue = totalValue / quantity;
+      let allocatedValue = 0;
+
+      await db.transaction(async (tx) => {
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i];
+          const isLast = i === chunks.length - 1;
+          const chunkValue = isLast
+            ? Math.round((totalValue - allocatedValue) * 100) / 100
+            : Math.round(unitValue * chunk.qty * 100) / 100;
+          allocatedValue += chunkValue;
+          const shareOfSale = chunk.qty / quantity;
+
+          const costBasis = blendedCostPerHead != null ? blendedCostPerHead * chunk.qty : null;
+          const profit = costBasis != null ? chunkValue - costBasis : null;
+
+          await tx
+            .update(lots)
+            .set({ quantity: sql`greatest(${lots.quantity} - ${chunk.qty}, 0)`, updatedAt: new Date() })
+            .where(eq(lots.id, chunk.lotId));
+
+          await tx.insert(sales).values({
+            farmId: session.farmId,
+            saleType: "lote",
+            lotId: chunk.lotId,
+            quantity: chunk.qty,
+            saleMode,
+            unitValue,
+            totalValue: chunkValue,
+            costBasis,
+            profit,
+            liveWeightKg: liveWeightKg != null ? Math.round(liveWeightKg * shareOfSale * 100) / 100 : null,
+            carcassWeightKg: carcassWeightKg != null ? Math.round(carcassWeightKg * shareOfSale * 100) / 100 : null,
+            saleDate,
+            buyer,
+            updatedBy: session.userId,
+          });
+        }
+      });
+
+      revalidatePath("/compras-vendas/vendas");
+      revalidatePath("/rebanho");
+      redirect("/compras-vendas/vendas");
+    }
 
     const lot = await db.query.lots.findFirst({
       where: and(eq(lots.id, lotId), eq(lots.farmId, session.farmId)),

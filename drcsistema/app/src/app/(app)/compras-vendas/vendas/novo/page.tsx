@@ -7,7 +7,7 @@ import { createSaleAction } from "@/app/actions/compras-vendas";
 import { VendaForm } from "@/components/venda-form";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  saldo: "Quantidade maior do que o saldo disponível no lote. Ajuste a quantidade e tente de novo.",
+  saldo: "Quantidade maior do que o saldo disponível. Ajuste a quantidade e tente de novo.",
   status: "Esse animal não está mais ativo (já foi vendido ou não está mais no rebanho).",
 };
 
@@ -75,6 +75,8 @@ export default async function NovaVendaPage({
     };
   });
 
+  const blendedPoolQuantity = activeLots.reduce((sum, l) => sum + l.quantity, 0);
+
   return (
     <div>
       <PageHeader title="Nova venda" description="Por lote (respeitando o saldo) ou individual" showBack />
@@ -86,7 +88,12 @@ export default async function NovaVendaPage({
       )}
 
       <Card className="max-w-2xl p-5">
-        <VendaForm lots={activeLots} animals={animalOptions} action={createSaleAction} />
+        <VendaForm
+          lots={activeLots}
+          animals={animalOptions}
+          blendedPoolQuantity={blendedPoolQuantity}
+          action={createSaleAction}
+        />
       </Card>
     </div>
   );

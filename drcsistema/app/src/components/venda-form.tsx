@@ -43,10 +43,12 @@ function animalOptionLabel(a: AnimalOption) {
 export function VendaForm({
   lots,
   animals,
+  blendedPoolQuantity,
   action,
 }: {
   lots: LotOption[];
   animals: AnimalOption[];
+  blendedPoolQuantity: number;
   action: (formData: FormData) => void;
 }) {
   const [saleKind, setSaleKind] = useState<"lote" | "individual">("lote");
@@ -108,30 +110,42 @@ export function VendaForm({
       </Field>
 
       {saleKind === "lote" ? (
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Lote">
-            <select name="lotId" required defaultValue="" className={inputClass}>
-              <option value="" disabled>
-                Selecione o lote
-              </option>
-              {lots.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name} ({l.quantity} cabeça{l.quantity === 1 ? "" : "s"})
+        <div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Lote">
+              <select name="lotId" required defaultValue="" className={inputClass}>
+                <option value="" disabled>
+                  Selecione o lote
                 </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Quantidade vendida">
-            <input
-              name="quantity"
-              type="number"
-              min={1}
-              required
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              className={inputClass}
-            />
-          </Field>
+                <option value="__misto__">
+                  Vários lotes misturados — média entre todos ({blendedPoolQuantity} cabeça
+                  {blendedPoolQuantity === 1 ? "" : "s"} no total)
+                </option>
+                {lots.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} ({l.quantity} cabeça{l.quantity === 1 ? "" : "s"})
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Quantidade vendida">
+              <input
+                name="quantity"
+                type="number"
+                min={1}
+                required
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <p className="mt-1.5 text-xs text-drc-green-900/60">
+            Não sabe de qual lote exato o animal saiu (comum quando um lote novo entra e se
+            mistura com o resto)? Escolha &quot;Vários lotes misturados&quot; — o custo usado é a
+            média ponderada entre todos os lotes ativos, e a baixa de quantidade é repartida entre
+            eles automaticamente.
+          </p>
         </div>
       ) : (
         <Field label="Animal">
