@@ -53,6 +53,7 @@ export function VendaForm({
 }) {
   const [saleKind, setSaleKind] = useState<"lote" | "individual">("lote");
   const [saleMode, setSaleMode] = useState<"vivo_cabeca" | "vivo_peso" | "carcaca" | "outra">("vivo_cabeca");
+  const [paymentType, setPaymentType] = useState<"a_vista" | "parcelado">("a_vista");
   const [liveWeight, setLiveWeight] = useState("");
   const [carcassWeight, setCarcassWeight] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -282,10 +283,54 @@ export function VendaForm({
         <Field label="Data da venda">
           <input name="saleDate" type="date" required defaultValue={today} className={inputClass} />
         </Field>
-        <Field label="Comprador (opcional)">
-          <input name="buyer" className={inputClass} />
+        <Field label={`Comprador${paymentType === "parcelado" ? "" : " (opcional)"}`}>
+          <input name="buyer" required={paymentType === "parcelado"} className={inputClass} />
+          {paymentType === "parcelado" && (
+            <p className="mt-1 text-xs text-drc-green-900/50">Usado no lembrete de recebimento.</p>
+          )}
         </Field>
       </div>
+
+      <Field label="Forma de recebimento">
+        <div className="flex gap-4 text-sm text-drc-green-900">
+          <label className="flex items-center gap-1.5">
+            <input
+              type="radio"
+              name="paymentType"
+              value="a_vista"
+              checked={paymentType === "a_vista"}
+              onChange={() => setPaymentType("a_vista")}
+            />
+            À vista
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input
+              type="radio"
+              name="paymentType"
+              value="parcelado"
+              checked={paymentType === "parcelado"}
+              onChange={() => setPaymentType("parcelado")}
+            />
+            A prazo (parcelado)
+          </label>
+        </div>
+      </Field>
+
+      {paymentType === "parcelado" && (
+        <div className="grid grid-cols-2 gap-4 rounded-lg bg-drc-green-950/5 p-3">
+          <Field label="Número de parcelas">
+            <input name="installments" type="number" min={1} defaultValue={2} required className={inputClass} />
+          </Field>
+          <Field label="Vencimento da 1ª parcela">
+            <input name="firstDueDate" type="date" required defaultValue={today} className={inputClass} />
+          </Field>
+          <p className="col-span-2 text-xs text-drc-green-900/60">
+            Cria um lembrete de recebimento por parcela em Contas a receber (Financeiro) e no
+            calendário. As parcelas seguintes vencem a cada 30 dias a partir da data acima, com o
+            valor total dividido em partes iguais.
+          </p>
+        </div>
+      )}
 
       <p className="text-xs text-drc-green-900/50">
         Custo e lucro são calculados automaticamente a partir do custo registrado no lote ou no

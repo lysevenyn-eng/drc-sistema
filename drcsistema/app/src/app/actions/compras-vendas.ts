@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { eq, and, sql, gt } from "drizzle-orm";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { purchases, expenses, sales, lots, animals, accountsPayable } from "@/db/schema";
+import { purchases, expenses, sales, lots, animals, accountsPayable, accountsReceivable } from "@/db/schema";
 
 type Sex = "macho" | "femea";
 
@@ -369,6 +369,10 @@ export async function deleteExpenseAction(formData: FormData) {
  * unidade daquele lote também — mesmo padrão já usado no óbito. Custo e
  * lucro são calculados a partir do custo por cabeça do lote vinculado
  * (quando existir); sem lote vinculado, ficam em branco.
+ *
+ * Venda a prazo (parcelada) gera contas a receber — uma linha por parcela em
+ * `accountsReceivable`, mesmo padrão de createPurchaseAction do lado das
+ * compras (ver comentário ali). Exclui em cascata se a venda for excluída.
  */
 export async function createSaleAction(formData: FormData) {
   const session = await adminFarmSession();
@@ -387,6 +391,19 @@ export async function createSaleAction(formData: FormData) {
   // simples do que travar no saleMode aqui também.
   const liveWeightKg = optNum(formData.get("liveWeightKg"));
   const carcassWeightKg = optNum(formData.get("carcassWeightKg"));
+
+  // Venda a prazo (parcelada) gera contas a receber — mesmo padrão de
+  // createPurchaseAction do lado das compras. Quando a venda "lote misto" gera
+  // mais de uma linha em `sales` (uma por lote afetado), o parcelamento é
+  // calculado sobre o valor total digitado (o que a pessoa realmente vendeu,
+  // sem se importar com o lote) e as parcelas ficam vinculadas à primeira
+  // linha gerada — simplificação deliberada, já que a intenção é uma parcela
+  // só por vencimento, não uma por lote.
+  const paymentType = str(formData.get("paymentType")) || "a_vista";
+  const installmentsCount = optNum(formData.get("installments"));
+  const firstDueDateStr = str(formData.get("firstDueDate"));
+  const isParcelado =
+    paymentType === "parcelado" && !!installmentsCount && installmentsCount >= 1 && !!firstDueDateStr;
 
   if (saleKind === "lote") {
     const lotId = str(formData.get("lotId"));
@@ -428,6 +445,7 @@ export async function createSaleAction(formData: FormData) {
 
       const unitValue = totalValue / quantity;
       let allocatedValue = 0;
+      let firstChunkSaleId: string | null = null;
 
       await db.transaction(async (tx) => {
         for (let i = 0; i < chunks.length; i++) {
@@ -447,27 +465,44 @@ export async function createSaleAction(formData: FormData) {
             .set({ quantity: sql`greatest(${lots.quantity} - ${chunk.qty}, 0)`, updatedAt: new Date() })
             .where(eq(lots.id, chunk.lotId));
 
-          await tx.insert(sales).values({
-            farmId: session.farmId,
-            saleType: "lote",
-            lotId: chunk.lotId,
-            quantity: chunk.qty,
-            saleMode,
-            unitValue,
-            totalValue: chunkValue,
-            costBasis,
-            profit,
-            liveWeightKg: liveWeightKg != null ? Math.round(liveWeightKg * shareOfSale * 100) / 100 : null,
-            carcassWeightKg: carcassWeightKg != null ? Math.round(carcassWeightKg * shareOfSale * 100) / 100 : null,
-            saleDate,
-            buyer,
-            updatedBy: session.userId,
-          });
+          const [insertedSale] = await tx
+            .insert(sales)
+            .values({
+              farmId: session.farmId,
+              saleType: "lote",
+              lotId: chunk.lotId,
+              quantity: chunk.qty,
+              saleMode,
+              unitValue,
+              totalValue: chunkValue,
+              costBasis,
+              profit,
+              liveWeightKg: liveWeightKg != null ? Math.round(liveWeightKg * shareOfSale * 100) / 100 : null,
+              carcassWeightKg: carcassWeightKg != null ? Math.round(carcassWeightKg * shareOfSale * 100) / 100 : null,
+              saleDate,
+              buyer,
+              updatedBy: session.userId,
+            })
+            .returning({ id: sales.id });
+          if (i === 0) firstChunkSaleId = insertedSale.id;
+        }
+
+        if (isParcelado && firstChunkSaleId) {
+          await tx.insert(accountsReceivable).values(
+            buildInstallments(totalValue, installmentsCount!, new Date(firstDueDateStr)).map((row) => ({
+              farmId: session.farmId,
+              saleId: firstChunkSaleId as string,
+              updatedBy: session.userId,
+              ...row,
+            }))
+          );
         }
       });
 
       revalidatePath("/compras-vendas/vendas");
       revalidatePath("/rebanho");
+      revalidatePath("/financeiro");
+      revalidatePath("/manejo/calendario");
       redirect("/compras-vendas/vendas");
     }
 
@@ -488,26 +523,42 @@ export async function createSaleAction(formData: FormData) {
         .set({ quantity: sql`greatest(${lots.quantity} - ${quantity}, 0)`, updatedAt: new Date() })
         .where(eq(lots.id, lotId));
 
-      await tx.insert(sales).values({
-        farmId: session.farmId,
-        saleType: "lote",
-        lotId,
-        quantity,
-        saleMode,
-        unitValue: totalValue / quantity,
-        totalValue,
-        costBasis,
-        profit,
-        liveWeightKg,
-        carcassWeightKg,
-        saleDate,
-        buyer,
-        updatedBy: session.userId,
-      });
+      const [newSale] = await tx
+        .insert(sales)
+        .values({
+          farmId: session.farmId,
+          saleType: "lote",
+          lotId,
+          quantity,
+          saleMode,
+          unitValue: totalValue / quantity,
+          totalValue,
+          costBasis,
+          profit,
+          liveWeightKg,
+          carcassWeightKg,
+          saleDate,
+          buyer,
+          updatedBy: session.userId,
+        })
+        .returning({ id: sales.id });
+
+      if (isParcelado) {
+        await tx.insert(accountsReceivable).values(
+          buildInstallments(totalValue, installmentsCount!, new Date(firstDueDateStr)).map((row) => ({
+            farmId: session.farmId,
+            saleId: newSale.id,
+            updatedBy: session.userId,
+            ...row,
+          }))
+        );
+      }
     });
 
     revalidatePath("/compras-vendas/vendas");
     revalidatePath("/rebanho");
+    revalidatePath("/financeiro");
+    revalidatePath("/manejo/calendario");
     redirect("/compras-vendas/vendas");
   } else {
     const animalId = str(formData.get("animalId"));
@@ -546,28 +597,44 @@ export async function createSaleAction(formData: FormData) {
           .where(eq(lots.id, animal.lotId));
       }
 
-      await tx.insert(sales).values({
-        farmId: session.farmId,
-        saleType: "individual",
-        animalId,
-        lotId: animal.lotId,
-        quantity: 1,
-        saleMode,
-        unitValue: totalValue,
-        totalValue,
-        costBasis,
-        profit,
-        liveWeightKg,
-        carcassWeightKg,
-        saleDate,
-        buyer,
-        updatedBy: session.userId,
-      });
+      const [newSale] = await tx
+        .insert(sales)
+        .values({
+          farmId: session.farmId,
+          saleType: "individual",
+          animalId,
+          lotId: animal.lotId,
+          quantity: 1,
+          saleMode,
+          unitValue: totalValue,
+          totalValue,
+          costBasis,
+          profit,
+          liveWeightKg,
+          carcassWeightKg,
+          saleDate,
+          buyer,
+          updatedBy: session.userId,
+        })
+        .returning({ id: sales.id });
+
+      if (isParcelado) {
+        await tx.insert(accountsReceivable).values(
+          buildInstallments(totalValue, installmentsCount!, new Date(firstDueDateStr)).map((row) => ({
+            farmId: session.farmId,
+            saleId: newSale.id,
+            updatedBy: session.userId,
+            ...row,
+          }))
+        );
+      }
     });
 
     revalidatePath("/compras-vendas/vendas");
     revalidatePath("/rebanho");
     revalidatePath(`/rebanho/animais/${animalId}`);
+    revalidatePath("/financeiro");
+    revalidatePath("/manejo/calendario");
     redirect("/compras-vendas/vendas");
   }
 }

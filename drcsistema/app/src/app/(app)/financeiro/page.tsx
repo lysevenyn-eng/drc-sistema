@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { sales, expenses, purchases, accountsPayable } from "@/db/schema";
+import { sales, expenses, purchases, accountsPayable, accountsReceivable } from "@/db/schema";
 import { PageHeader, StatCard, Card, Badge, EmptyState } from "@/components/ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { formatCurrency } from "@/lib/money";
@@ -11,6 +11,9 @@ import {
   markPayableAsPaidAction,
   markPayableAsUnpaidAction,
   deletePayableAction,
+  markReceivableAsReceivedAction,
+  markReceivableAsUnreceivedAction,
+  deleteReceivableAction,
 } from "@/app/actions/financeiro";
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -40,10 +43,10 @@ export default async function FinanceiroPage() {
   }
   const farmId = session.farmId;
 
-  const [saleList, expenseList, purchaseList, payables] = await Promise.all([
+  const [saleList, expenseList, purchaseList, payables, receivables] = await Promise.all([
     db.query.sales.findMany({
       where: eq(sales.farmId, farmId),
-      columns: { totalValue: true, profit: true, saleDate: true },
+      columns: { id: true, totalValue: true, profit: true, saleDate: true },
     }),
     db.query.expenses.findMany({
       where: eq(expenses.farmId, farmId),
@@ -56,6 +59,10 @@ export default async function FinanceiroPage() {
     db.query.accountsPayable.findMany({
       where: eq(accountsPayable.farmId, farmId),
       with: { purchase: { columns: { supplierName: true, description: true } } },
+    }),
+    db.query.accountsReceivable.findMany({
+      where: eq(accountsReceivable.farmId, farmId),
+      with: { sale: { columns: { buyer: true } } },
     }),
   ]);
 
@@ -77,6 +84,33 @@ export default async function FinanceiroPage() {
   const totalPayableAberto = payables
     .filter((p) => !p.paidAt)
     .reduce((sum, p) => sum + p.value, 0);
+
+  // Contas a receber: mesmo padrão das contas a pagar, do lado das vendas.
+  const receivableRows = receivables
+    .map((r) => ({ ...r, isOverdue: !r.receivedAt && new Date(r.dueDate) < todayStart }))
+    .sort((a, b) => {
+      if (!!a.receivedAt !== !!b.receivedAt) return a.receivedAt ? 1 : -1;
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
+  const totalReceivableAberto = receivables
+    .filter((r) => !r.receivedAt)
+    .reduce((sum, r) => sum + r.value, 0);
+
+  // Recebido (caixa) x Receita (competência): venda à vista conta como
+  // recebida na hora (não gera parcela); venda a prazo só entra aqui pela
+  // parte das parcelas já marcadas como recebidas — nem toda receita é caixa
+  // da empresa.
+  const receivablesBySale = new Map<string, typeof receivables>();
+  for (const r of receivables) {
+    const list = receivablesBySale.get(r.saleId);
+    if (list) list.push(r);
+    else receivablesBySale.set(r.saleId, [r]);
+  }
+  const totalRecebido = saleList.reduce((sum, s) => {
+    const installmentsForSale = receivablesBySale.get(s.id);
+    if (!installmentsForSale || installmentsForSale.length === 0) return sum + s.totalValue;
+    return sum + installmentsForSale.filter((r) => r.receivedAt).reduce((s2, r) => s2 + r.value, 0);
+  }, 0);
 
   // Despesas por categoria
   const byCategory = new Map<string, { total: number; count: number }>();
@@ -115,8 +149,13 @@ export default async function FinanceiroPage() {
         description="Receitas, despesas e resultado comercial — separado do saldo real disponível na carteira"
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
-        <StatCard label="Receita (vendas)" value={formatCurrency(totalReceita)} />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Receita (vendas)" value={formatCurrency(totalReceita)} hint="Total vendido, mesmo a prazo" />
+        <StatCard
+          label="Recebido"
+          value={formatCurrency(totalRecebido)}
+          hint="Caixa: à vista + parcelas já pagas"
+        />
         <StatCard label="Despesas" value={formatCurrency(totalDespesas)} />
         <StatCard
           label="Resultado comercial"
@@ -136,6 +175,11 @@ export default async function FinanceiroPage() {
         <StatCard
           label="A pagar (em aberto)"
           value={formatCurrency(totalPayableAberto)}
+          hint="Parcelas pendentes ou atrasadas"
+        />
+        <StatCard
+          label="A receber (em aberto)"
+          value={formatCurrency(totalReceivableAberto)}
           hint="Parcelas pendentes ou atrasadas"
         />
       </div>
@@ -257,6 +301,72 @@ export default async function FinanceiroPage() {
                       </form>
                       <ConfirmForm action={deletePayableAction} confirmMessage="Excluir esta conta a pagar?">
                         <input type="hidden" name="id" value={p.id} />
+                        <button
+                          type="submit"
+                          className="rounded-lg border border-drc-border px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                        >
+                          Excluir
+                        </button>
+                      </ConfirmForm>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <Card className="mt-4 overflow-x-auto p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-drc-green-950">Contas a receber</h2>
+          <p className="text-xs text-drc-green-900/50">Geradas por vendas a prazo</p>
+        </div>
+        {receivableRows.length === 0 ? (
+          <EmptyState>Nenhuma conta a receber — nenhuma venda a prazo registrada ainda.</EmptyState>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-drc-border text-left text-xs uppercase tracking-wide text-drc-green-900/60">
+                <th className="py-2">Comprador</th>
+                <th className="py-2">Parcela</th>
+                <th className="py-2">Vencimento</th>
+                <th className="py-2">Valor</th>
+                <th className="py-2">Status</th>
+                <th className="py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {receivableRows.map((r) => (
+                <tr key={r.id} className="border-b border-drc-border/60 last:border-0">
+                  <td className="py-2 text-drc-green-900/80">{r.sale?.buyer || "—"}</td>
+                  <td className="py-2 text-drc-green-900/80">
+                    {r.installmentNumber}/{r.totalInstallments}
+                  </td>
+                  <td className="py-2 text-drc-green-900/80">
+                    {format(new Date(r.dueDate), "dd/MM/yyyy")}
+                  </td>
+                  <td className="py-2 font-medium text-drc-green-950">{formatCurrency(r.value)}</td>
+                  <td className="py-2">
+                    <Badge tone={r.receivedAt ? "green" : r.isOverdue ? "red" : "gold"}>
+                      {r.receivedAt ? "Recebido" : r.isOverdue ? "Atrasado" : "Pendente"}
+                    </Badge>
+                  </td>
+                  <td className="py-2">
+                    <div className="flex justify-end gap-2">
+                      <form
+                        action={r.receivedAt ? markReceivableAsUnreceivedAction : markReceivableAsReceivedAction}
+                      >
+                        <input type="hidden" name="id" value={r.id} />
+                        <button
+                          type="submit"
+                          className="rounded-lg border border-drc-border px-2.5 py-1 text-xs font-medium text-drc-green-900 hover:bg-drc-green-950/5"
+                        >
+                          {r.receivedAt ? "Desfazer" : "Marcar como recebido"}
+                        </button>
+                      </form>
+                      <ConfirmForm action={deleteReceivableAction} confirmMessage="Excluir esta conta a receber?">
+                        <input type="hidden" name="id" value={r.id} />
                         <button
                           type="submit"
                           className="rounded-lg border border-drc-border px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"

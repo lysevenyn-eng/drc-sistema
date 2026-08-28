@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { eq, and } from "drizzle-orm";
 import { requireAdmin } from "@/lib/session";
 import { db } from "@/db";
-import { walletAccounts, accountsPayable } from "@/db/schema";
+import { walletAccounts, accountsPayable, accountsReceivable } from "@/db/schema";
 
 // Financeiro e Carteira envolvem valores — mesmo padrão admin-only de
 // Compras e vendas (ver comentário equivalente em compras-vendas.ts).
@@ -128,6 +128,50 @@ export async function deletePayableAction(formData: FormData) {
   await db
     .delete(accountsPayable)
     .where(and(eq(accountsPayable.id, id), eq(accountsPayable.farmId, session.farmId)));
+
+  revalidatePath("/financeiro");
+  revalidatePath("/manejo/calendario");
+}
+
+// ---------- Contas a receber ----------
+// Espelho exato das contas a pagar acima, do lado das vendas — nascem em
+// createSaleAction (compras-vendas.ts) quando a venda é a prazo/parcelada.
+export async function markReceivableAsReceivedAction(formData: FormData) {
+  const session = await adminFarmSession();
+  const id = str(formData.get("id"));
+  if (!id) return;
+
+  await db
+    .update(accountsReceivable)
+    .set({ receivedAt: new Date(), updatedBy: session.userId, updatedAt: new Date() })
+    .where(and(eq(accountsReceivable.id, id), eq(accountsReceivable.farmId, session.farmId)));
+
+  revalidatePath("/financeiro");
+  revalidatePath("/manejo/calendario");
+}
+
+export async function markReceivableAsUnreceivedAction(formData: FormData) {
+  const session = await adminFarmSession();
+  const id = str(formData.get("id"));
+  if (!id) return;
+
+  await db
+    .update(accountsReceivable)
+    .set({ receivedAt: null, updatedBy: session.userId, updatedAt: new Date() })
+    .where(and(eq(accountsReceivable.id, id), eq(accountsReceivable.farmId, session.farmId)));
+
+  revalidatePath("/financeiro");
+  revalidatePath("/manejo/calendario");
+}
+
+export async function deleteReceivableAction(formData: FormData) {
+  const session = await adminFarmSession();
+  const id = str(formData.get("id"));
+  if (!id) return;
+
+  await db
+    .delete(accountsReceivable)
+    .where(and(eq(accountsReceivable.id, id), eq(accountsReceivable.farmId, session.farmId)));
 
   revalidatePath("/financeiro");
   revalidatePath("/manejo/calendario");

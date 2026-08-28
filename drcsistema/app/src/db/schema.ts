@@ -389,9 +389,34 @@ export const sales = pgTable("sales", {
   ...timestamps,
 });
 
-export const salesRelations = relations(sales, ({ one }) => ({
+export const salesRelations = relations(sales, ({ one, many }) => ({
   lot: one(lots, { fields: [sales.lotId], references: [lots.id] }),
   animal: one(animals, { fields: [sales.animalId], references: [animals.id] }),
+  accountsReceivable: many(accountsReceivable),
+}));
+
+// ---------- Contas a receber ----------
+// Espelha accounts_payable (compras), do lado das vendas — só existem
+// vinculadas a uma venda a prazo (ver createSaleAction). Um "informativo" por
+// parcela, cada um com seu próprio vencimento, pra aparecer no calendário e
+// em Financeiro. Admin-only, mesma regra do resto do módulo financeiro.
+// Exclui em cascata se a venda for excluída (onDelete: cascade no saleId).
+export const accountsReceivable = pgTable("accounts_receivable", {
+  id: uuid(),
+  farmId: text("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
+  saleId: text("sale_id").notNull().references(() => sales.id, { onDelete: "cascade" }),
+  installmentNumber: integer("installment_number").notNull(),
+  totalInstallments: integer("total_installments").notNull(),
+  value: numeric("value", { precision: 12, scale: 2, mode: "number" }).notNull(),
+  dueDate: timestamp("due_date", { withTimezone: true }).notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }),
+  notes: text("notes"),
+  updatedBy: text("updated_by").references(() => users.id),
+  ...timestamps,
+});
+
+export const accountsReceivableRelations = relations(accountsReceivable, ({ one }) => ({
+  sale: one(sales, { fields: [accountsReceivable.saleId], references: [sales.id] }),
 }));
 
 // ---------- Óbitos (baixa por morte) ----------

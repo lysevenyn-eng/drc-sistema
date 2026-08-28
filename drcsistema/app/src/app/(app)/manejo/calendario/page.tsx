@@ -23,6 +23,7 @@ import {
   managementTasks,
   managementTaskAssignees,
   accountsPayable,
+  accountsReceivable,
 } from "@/db/schema";
 import { PageHeader, Card, EmptyState } from "@/components/ui";
 import { IconChevronLeft, IconChevronRight } from "@/components/icons";
@@ -52,13 +53,14 @@ type TaskRow = typeof managementTasks.$inferSelect & {
 };
 
 // Uma célula do calendário mistura tarefas de manejo com (só para admins)
-// lembretes de contas a pagar — cada um vira uma "pill" nesse formato comum.
+// lembretes de contas a pagar/receber — cada um vira uma "pill" nesse
+// formato comum.
 type Pill = {
   key: string;
   href: string;
   title: string;
   label: string;
-  tone: "done" | "overdue" | "normal" | "payable";
+  tone: "done" | "overdue" | "normal" | "payable" | "receivable";
 };
 
 const PILL_TONE_CLASS: Record<Pill["tone"], string> = {
@@ -66,6 +68,7 @@ const PILL_TONE_CLASS: Record<Pill["tone"], string> = {
   overdue: "bg-red-50 text-red-700",
   normal: "bg-drc-gold-500/15 text-drc-green-900",
   payable: "bg-amber-100 text-amber-900",
+  receivable: "bg-sky-100 text-sky-900",
 };
 
 export default async function ManejoCalendarioPage({
@@ -86,7 +89,7 @@ export default async function ManejoCalendarioPage({
 
   const isAdmin = session.role === "admin";
 
-  const [tasks, payables] = await Promise.all([
+  const [tasks, payables, receivables] = await Promise.all([
     db.query.managementTasks.findMany({
       where: eq(managementTasks.farmId, farmId),
       with: { animal: true, lot: true, assignees: { with: { user: true } } },
@@ -96,6 +99,12 @@ export default async function ManejoCalendarioPage({
       ? db.query.accountsPayable.findMany({
           where: and(eq(accountsPayable.farmId, farmId), isNull(accountsPayable.paidAt)),
           with: { purchase: { columns: { supplierName: true, description: true } } },
+        })
+      : Promise.resolve([]),
+    isAdmin
+      ? db.query.accountsReceivable.findMany({
+          where: and(eq(accountsReceivable.farmId, farmId), isNull(accountsReceivable.receivedAt)),
+          with: { sale: { columns: { buyer: true } } },
         })
       : Promise.resolve([]),
   ]);
@@ -141,6 +150,21 @@ export default async function ManejoCalendarioPage({
       title: `Pagar ${supplier} — ${formatCurrency(p.value)} (parcela ${p.installmentNumber}/${p.totalInstallments})`,
       label: `Pagar: ${supplier}`,
       tone: isOverdue ? "overdue" : "payable",
+    });
+  }
+
+  // Lembretes de contas a receber (só para admins, mesma regra acima). Só as
+  // não recebidas: uma vez recebida, o lembrete deixa de fazer sentido.
+  for (const r of receivables) {
+    const key = format(new Date(r.dueDate), "yyyy-MM-dd");
+    const isOverdue = new Date(r.dueDate) < todayStart;
+    const buyer = r.sale?.buyer || "Comprador";
+    pushPill(key, {
+      key: `receivable-${r.id}`,
+      href: "/financeiro",
+      title: `Receber de ${buyer} — ${formatCurrency(r.value)} (parcela ${r.installmentNumber}/${r.totalInstallments})`,
+      label: `Receber: ${buyer}`,
+      tone: isOverdue ? "overdue" : "receivable",
     });
   }
 
@@ -277,12 +301,12 @@ export default async function ManejoCalendarioPage({
       </p>
       {isAdmin && (
         <p className="mt-1 text-xs text-drc-green-900/50">
-          Os lembretes em laranja/vermelho são contas a pagar (só visíveis para
-          administradores) — levam até{" "}
+          Os lembretes em laranja são contas a pagar e em azul são contas a receber (só visíveis
+          para administradores; atrasadas ficam em vermelho) — levam até{" "}
           <Link href="/financeiro" className="underline underline-offset-2">
             Financeiro
           </Link>
-          , onde dá para marcar como pago.
+          , onde dá para marcar como pago/recebido.
         </p>
       )}
     </div>
