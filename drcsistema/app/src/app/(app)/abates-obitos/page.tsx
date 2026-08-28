@@ -9,6 +9,7 @@ import {
   registerDeathAction,
   confirmDeathReasonAction,
   resolveAbateEventAction,
+  reopenAbateEventAction,
   deleteLotAbateEventAction,
   deleteLotMortalityEventAction,
   reactivateAnimalAction,
@@ -167,6 +168,17 @@ export default async function AbatesObitosPage() {
                         </button>
                       </ConfirmForm>
                     </>
+                  )}
+                  {isAdmin && resolved && isLote && (
+                    <form action={reopenAbateEventAction}>
+                      <input type="hidden" name="eventId" value={ev.id} />
+                      <button
+                        type="submit"
+                        className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                      >
+                        Reabrir (foi marcado como vendido sem uma venda lançada)
+                      </button>
+                    </form>
                   )}
                 </div>
               </div>

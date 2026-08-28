@@ -754,7 +754,9 @@ export async function updateAbateEventAction(formData: FormData) {
  * Admin marca um abate em lote como resolvido (venda já lançada normalmente
  * em Compras e vendas — sem vínculo automático com uma venda específica,
  * diferente do abate individual, porque um abate em lote não aponta pra
- * animais específicos pra casar 1:1 com uma linha de venda).
+ * animais específicos pra casar 1:1 com uma linha de venda). Só muda
+ * resolvedAt — não cria nem vincula venda nenhuma; se for clicado sem uma
+ * venda ter sido lançada de verdade, ver reopenAbateEventAction pra desfazer.
  */
 export async function resolveAbateEventAction(formData: FormData) {
   const session = await requireAdmin();
@@ -765,6 +767,31 @@ export async function resolveAbateEventAction(formData: FormData) {
   await db
     .update(abateEvents)
     .set({ resolvedAt: new Date(), updatedBy: session.userId, updatedAt: new Date() })
+    .where(and(eq(abateEvents.id, eventId), eq(abateEvents.farmId, session.farmId), isNull(abateEvents.animalId)));
+
+  revalidatePath("/abates-obitos");
+  revalidatePath("/dashboard");
+}
+
+/**
+ * Desfaz um "Marcar como vendido" clicado sem uma venda ter sido lançada de
+ * verdade (só existe pra abate em lote — resolveAbateEventAction nunca
+ * mexe no individual, esse só resolve de verdade quando createSaleAction
+ * vincula o saleId). Depois de reaberto, "Ir para nova venda" e "Excluir"
+ * voltam a aparecer pro abate. Seguro reverter mesmo se já existir uma
+ * venda lançada por fora (à mão, sem passar pela ponte "Ir para nova
+ * venda") — reabrir não mexe em nenhuma venda já lançada, só no rótulo
+ * "vendido" deste registro de abate.
+ */
+export async function reopenAbateEventAction(formData: FormData) {
+  const session = await requireAdmin();
+  if (!session.farmId) return;
+  const eventId = str(formData.get("eventId"));
+  if (!eventId) return;
+
+  await db
+    .update(abateEvents)
+    .set({ resolvedAt: null, updatedBy: session.userId, updatedAt: new Date() })
     .where(and(eq(abateEvents.id, eventId), eq(abateEvents.farmId, session.farmId), isNull(abateEvents.animalId)));
 
   revalidatePath("/abates-obitos");
