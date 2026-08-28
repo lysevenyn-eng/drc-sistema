@@ -440,25 +440,33 @@ export const mortalityEvents = pgTable("mortality_events", {
 
 export const mortalityEventsRelations = relations(mortalityEvents, ({ one }) => ({
   animal: one(animals, { fields: [mortalityEvents.animalId], references: [animals.id] }),
+  lot: one(lots, { fields: [mortalityEvents.lotId], references: [lots.id] }),
 }));
 
 // ---------- Abates ----------
 // Registrado (tipicamente pelo cabanheiro, na tela /abates-obitos) no momento
-// do abate — dá baixa no animal (status "abatido") na hora, mas fica pendente
+// do abate — dá baixa na hora (no animal, status "abatido", ou na quantidade
+// do lote quando é abate em lote — animalId nulo e quantity > 1 nesse caso,
+// mesmo padrão de mortalityEvents acima). Um abate individual fica pendente
 // (saleId nulo) até o admin registrar a venda correspondente em Compras e
-// vendas. createSaleAction vincula saleId ao criar a venda pra esse animal,
+// vendas — createSaleAction vincula saleId ao criar a venda pra esse animal,
 // resolvendo a pendência; excluir essa venda desfaz o vínculo (onDelete: set
 // null abaixo) e devolve o animal pro status "abatido" (ver deleteSaleAction).
+// Um abate em lote não tem um animal específico pra vincular a uma venda só —
+// fica pendente até o admin marcar como resolvido manualmente (resolvedAt,
+// ver resolveAbateEventAction), depois de lançar a(s) venda(s) normalmente.
 export const abateEvents = pgTable("abate_events", {
   id: uuid(),
   farmId: text("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
-  animalId: text("animal_id").notNull().references(() => animals.id, { onDelete: "cascade" }),
+  animalId: text("animal_id").references(() => animals.id, { onDelete: "cascade" }),
   lotId: text("lot_id").references(() => lots.id, { onDelete: "set null" }),
+  quantity: integer("quantity").notNull().default(1),
   carcassWeightKg: numeric("carcass_weight_kg", { precision: 6, scale: 2, mode: "number" }),
   liveWeightKg: numeric("live_weight_kg", { precision: 6, scale: 2, mode: "number" }),
   eventDate: timestamp("event_date", { withTimezone: true }).notNull().defaultNow(),
   notes: text("notes"),
   saleId: text("sale_id").references(() => sales.id, { onDelete: "set null" }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   updatedBy: text("updated_by").references(() => users.id),
   ...timestamps,
 });
@@ -467,6 +475,44 @@ export const abateEventsRelations = relations(abateEvents, ({ one }) => ({
   animal: one(animals, { fields: [abateEvents.animalId], references: [animals.id] }),
   lot: one(lots, { fields: [abateEvents.lotId], references: [lots.id] }),
   sale: one(sales, { fields: [abateEvents.saleId], references: [sales.id] }),
+}));
+
+// ---------- Mudança de lote ----------
+// Move cabeças de um lote pra outro dentro do próprio rebanho — ex.: separar
+// lotes de confinamento a partir de um lote maior. Sempre entre dois lotes já
+// cadastrados (não cobre "sem lote" nos dois lados — pra isso, editar o lote
+// do animal direto na ficha dele). De um animal específico (animalId
+// preenchido, quantity sempre 1 — soma/subtrai 1 nos dois lotes e atualiza o
+// lotId do animal) ou de N cabeças sem identificar quais (animalId nulo,
+// quantity = N — mesmo padrão de abate/óbito em lote). Diferente de
+// abate/óbito, não é uma baixa do rebanho — só uma realocação interna — então
+// acontece na hora, sem pendência pra ninguém confirmar depois (ver
+// transferLotAction, deleteLotTransferAction em actions/rebanho.ts).
+export const lotTransfers = pgTable("lot_transfers", {
+  id: uuid(),
+  farmId: text("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
+  animalId: text("animal_id").references(() => animals.id, { onDelete: "set null" }),
+  fromLotId: text("from_lot_id").references(() => lots.id, { onDelete: "set null" }),
+  toLotId: text("to_lot_id").references(() => lots.id, { onDelete: "set null" }),
+  quantity: integer("quantity").notNull().default(1),
+  eventDate: timestamp("event_date", { withTimezone: true }).notNull().defaultNow(),
+  notes: text("notes"),
+  updatedBy: text("updated_by").references(() => users.id),
+  ...timestamps,
+});
+
+export const lotTransfersRelations = relations(lotTransfers, ({ one }) => ({
+  animal: one(animals, { fields: [lotTransfers.animalId], references: [animals.id] }),
+  fromLot: one(lots, {
+    fields: [lotTransfers.fromLotId],
+    references: [lots.id],
+    relationName: "transferFromLot",
+  }),
+  toLot: one(lots, {
+    fields: [lotTransfers.toLotId],
+    references: [lots.id],
+    relationName: "transferToLot",
+  }),
 }));
 
 // ---------- Financeiro / Carteira ----------

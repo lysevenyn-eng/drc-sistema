@@ -2,13 +2,31 @@ import Link from "next/link";
 import { eq, and } from "drizzle-orm";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
-import { animals, abateEvents, mortalityEvents } from "@/db/schema";
+import { animals, lots, abateEvents, mortalityEvents } from "@/db/schema";
 import { PageHeader, Card, Badge, EmptyState } from "@/components/ui";
-import { registerAbateAction, registerDeathAction, confirmDeathReasonAction } from "@/app/actions/rebanho";
+import {
+  registerAbateAction,
+  registerDeathAction,
+  confirmDeathReasonAction,
+  resolveAbateEventAction,
+  deleteLotAbateEventAction,
+  deleteLotMortalityEventAction,
+} from "@/app/actions/rebanho";
+import { ConfirmForm } from "@/components/confirm-form";
 import { AbateObitoForm } from "@/components/abate-obito-form";
 
 const inputClass =
   "w-full rounded-lg border border-drc-border bg-white px-3 py-2 text-sm text-drc-green-950 outline-none focus:border-drc-green-700 focus:ring-2 focus:ring-drc-gold-400/50";
+
+function eventTitle(ev: {
+  animal: { tag: string; name: string | null } | null;
+  lot: { name: string } | null;
+  quantity: number;
+}) {
+  if (ev.animal) return `${ev.animal.tag}${ev.animal.name ? ` — ${ev.animal.name}` : ""}`;
+  if (ev.lot) return `Lote: ${ev.lot.name} (${ev.quantity} cabeça${ev.quantity === 1 ? "" : "s"})`;
+  return "Animal excluído";
+}
 
 export default async function AbatesObitosPage() {
   const session = await requireSession();
@@ -18,21 +36,25 @@ export default async function AbatesObitosPage() {
   const farmId = session.farmId;
   const isAdmin = session.role === "admin";
 
-  const [activeAnimals, abateRows, mortalityRows] = await Promise.all([
+  const [activeAnimals, activeLots, abateRows, mortalityRows] = await Promise.all([
     db.query.animals.findMany({
       where: and(eq(animals.farmId, farmId), eq(animals.status, "ativo")),
       with: { lot: true },
       orderBy: (a, { asc }) => [asc(a.tag)],
     }),
+    db.query.lots.findMany({
+      where: and(eq(lots.farmId, farmId), eq(lots.status, "ativo")),
+      orderBy: (l, { asc }) => [asc(l.name)],
+    }),
     db.query.abateEvents.findMany({
       where: eq(abateEvents.farmId, farmId),
-      with: { animal: true },
+      with: { animal: true, lot: true },
       orderBy: (e, { desc }) => [desc(e.eventDate)],
       limit: 25,
     }),
     db.query.mortalityEvents.findMany({
       where: eq(mortalityEvents.farmId, farmId),
-      with: { animal: true },
+      with: { animal: true, lot: true },
       orderBy: (e, { desc }) => [desc(e.eventDate)],
       limit: 25,
     }),
@@ -44,17 +66,19 @@ export default async function AbatesObitosPage() {
     name: a.name,
     lot: a.lot ? { name: a.lot.name } : null,
   }));
+  const lotOptions = activeLots.map((l) => ({ id: l.id, name: l.name, quantity: l.quantity }));
 
   return (
     <div>
       <PageHeader
         title="Abates e óbitos"
-        description="Registre um abate ou óbito — a baixa do animal acontece na hora; se você não for admin, fica pendente até a confirmação"
+        description="Registre um abate ou óbito, de um animal ou de vários de um lote — a baixa acontece na hora; se você não for admin, fica pendente até a confirmação"
       />
 
       <Card className="max-w-2xl p-5">
         <AbateObitoForm
           animals={animalOptions}
+          lots={lotOptions}
           isAdmin={isAdmin}
           abateAction={registerAbateAction}
           obitoAction={registerDeathAction}
@@ -68,32 +92,64 @@ export default async function AbatesObitosPage() {
         {abateRows.length === 0 ? (
           <EmptyState>Nenhum abate registrado ainda.</EmptyState>
         ) : (
-          abateRows.map((ev) => (
-            <div key={ev.id} className="p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-medium text-drc-green-950">
-                  {ev.animal ? `${ev.animal.tag}${ev.animal.name ? ` — ${ev.animal.name}` : ""}` : "Animal excluído"}
+          abateRows.map((ev) => {
+            const resolved = !!ev.saleId || !!ev.resolvedAt;
+            const isLote = !ev.animalId;
+            return (
+              <div key={ev.id} className="p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium text-drc-green-950">{eventTitle(ev)}</p>
+                  <Badge tone={resolved ? "green" : "gold"}>
+                    {resolved ? "Vendido" : "Aguardando venda"}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs text-drc-green-900/60">
+                  {new Date(ev.eventDate).toLocaleDateString("pt-BR")}
+                  {ev.carcassWeightKg != null ? ` · carcaça ${ev.carcassWeightKg} kg` : ""}
+                  {ev.liveWeightKg != null ? ` · vivo ${ev.liveWeightKg} kg` : ""}
                 </p>
-                <Badge tone={ev.saleId ? "green" : "gold"}>
-                  {ev.saleId ? "Vendido" : "Aguardando venda"}
-                </Badge>
+                {ev.notes && <p className="mt-1 text-xs text-drc-green-900/60">{ev.notes}</p>}
+                {isAdmin && !resolved && !isLote && ev.animalId && (
+                  <Link
+                    href={`/compras-vendas/vendas/novo?animalId=${ev.animalId}`}
+                    className="mt-2 inline-block text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                  >
+                    Registrar venda →
+                  </Link>
+                )}
+                {isAdmin && !resolved && isLote && (
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    {ev.lotId && (
+                      <Link
+                        href="/compras-vendas/vendas/novo"
+                        className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                      >
+                        Ir para nova venda →
+                      </Link>
+                    )}
+                    <form action={resolveAbateEventAction}>
+                      <input type="hidden" name="eventId" value={ev.id} />
+                      <button
+                        type="submit"
+                        className="rounded-lg bg-drc-gold-500 px-3 py-1.5 text-xs font-semibold text-drc-green-950 hover:bg-drc-gold-400"
+                      >
+                        Marcar como vendido
+                      </button>
+                    </form>
+                    <ConfirmForm
+                      action={deleteLotAbateEventAction}
+                      confirmMessage="Excluir este registro de abate em lote? A quantidade volta para o lote."
+                    >
+                      <input type="hidden" name="eventId" value={ev.id} />
+                      <button type="submit" className="text-xs font-medium text-red-600 underline underline-offset-2">
+                        Excluir
+                      </button>
+                    </ConfirmForm>
+                  </div>
+                )}
               </div>
-              <p className="mt-1 text-xs text-drc-green-900/60">
-                {new Date(ev.eventDate).toLocaleDateString("pt-BR")}
-                {ev.carcassWeightKg != null ? ` · carcaça ${ev.carcassWeightKg} kg` : ""}
-                {ev.liveWeightKg != null ? ` · vivo ${ev.liveWeightKg} kg` : ""}
-              </p>
-              {ev.notes && <p className="mt-1 text-xs text-drc-green-900/60">{ev.notes}</p>}
-              {isAdmin && !ev.saleId && ev.animalId && (
-                <Link
-                  href={`/compras-vendas/vendas/novo?animalId=${ev.animalId}`}
-                  className="mt-2 inline-block text-xs font-medium text-drc-green-700 underline underline-offset-2"
-                >
-                  Registrar venda →
-                </Link>
-              )}
-            </div>
-          ))
+            );
+          })
         )}
       </Card>
 
@@ -104,41 +160,58 @@ export default async function AbatesObitosPage() {
         {mortalityRows.length === 0 ? (
           <EmptyState>Nenhum óbito registrado ainda.</EmptyState>
         ) : (
-          mortalityRows.map((ev) => (
-            <div key={ev.id} className="p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-medium text-drc-green-950">
-                  {ev.animal ? `${ev.animal.tag}${ev.animal.name ? ` — ${ev.animal.name}` : ""}` : "Animal excluído"}
+          mortalityRows.map((ev) => {
+            const isLote = !ev.animalId;
+            return (
+              <div key={ev.id} className="p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium text-drc-green-950">{eventTitle(ev)}</p>
+                  <Badge tone={ev.confirmedAt ? "green" : "gold"}>
+                    {ev.confirmedAt ? "Confirmado" : "Aguardando confirmação"}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs text-drc-green-900/60">
+                  {new Date(ev.eventDate).toLocaleDateString("pt-BR")}
+                  {ev.reason ? ` · ${ev.reason}` : ""}
                 </p>
-                <Badge tone={ev.confirmedAt ? "green" : "gold"}>
-                  {ev.confirmedAt ? "Confirmado" : "Aguardando confirmação"}
-                </Badge>
+                {isAdmin && !ev.confirmedAt && (
+                  <div className="mt-2 space-y-2">
+                    <form action={confirmDeathReasonAction} className="space-y-2">
+                      <input type="hidden" name="eventId" value={ev.id} />
+                      <textarea
+                        name="reason"
+                        required
+                        rows={2}
+                        defaultValue={ev.reason ?? ""}
+                        placeholder="Confirmar motivo do óbito"
+                        className={inputClass}
+                      />
+                      <button
+                        type="submit"
+                        className="rounded-lg bg-drc-gold-500 px-3 py-1.5 text-xs font-semibold text-drc-green-950 hover:bg-drc-gold-400"
+                      >
+                        Confirmar motivo
+                      </button>
+                    </form>
+                    {isLote && (
+                      <ConfirmForm
+                        action={deleteLotMortalityEventAction}
+                        confirmMessage="Excluir este registro de óbito em lote? A quantidade volta para o lote."
+                      >
+                        <input type="hidden" name="eventId" value={ev.id} />
+                        <button
+                          type="submit"
+                          className="text-xs font-medium text-red-600 underline underline-offset-2"
+                        >
+                          Excluir
+                        </button>
+                      </ConfirmForm>
+                    )}
+                  </div>
+                )}
               </div>
-              <p className="mt-1 text-xs text-drc-green-900/60">
-                {new Date(ev.eventDate).toLocaleDateString("pt-BR")}
-                {ev.reason ? ` · ${ev.reason}` : ""}
-              </p>
-              {isAdmin && !ev.confirmedAt && (
-                <form action={confirmDeathReasonAction} className="mt-2 space-y-2">
-                  <input type="hidden" name="eventId" value={ev.id} />
-                  <textarea
-                    name="reason"
-                    required
-                    rows={2}
-                    defaultValue={ev.reason ?? ""}
-                    placeholder="Confirmar motivo do óbito"
-                    className={inputClass}
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-drc-gold-500 px-3 py-1.5 text-xs font-semibold text-drc-green-950 hover:bg-drc-gold-400"
-                  >
-                    Confirmar motivo
-                  </button>
-                </form>
-              )}
-            </div>
-          ))
+            );
+          })
         )}
       </Card>
     </div>

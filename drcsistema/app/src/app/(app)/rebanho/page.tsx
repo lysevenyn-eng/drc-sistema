@@ -55,12 +55,20 @@ export default async function RebanhoPage() {
         <h2 className="text-sm font-semibold text-drc-green-950">
           Lotes {farmLots.length > 0 && `(${farmLots.length})`}
         </h2>
-        <Link
-          href="/rebanho/lotes/novo"
-          className="rounded-lg bg-drc-gold-500 px-3 py-1.5 text-sm font-semibold text-drc-green-950 hover:bg-drc-gold-400"
-        >
-          + Novo lote
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/rebanho/mudanca-lote"
+            className="text-sm font-medium text-drc-green-700 underline underline-offset-2"
+          >
+            Mudança de lote
+          </Link>
+          <Link
+            href="/rebanho/lotes/novo"
+            className="rounded-lg bg-drc-gold-500 px-3 py-1.5 text-sm font-semibold text-drc-green-950 hover:bg-drc-gold-400"
+          >
+            + Novo lote
+          </Link>
+        </div>
       </div>
       <Card className="mt-3 overflow-x-auto">
         {farmLots.length === 0 ? (
@@ -138,6 +146,12 @@ export default async function RebanhoPage() {
                         className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
                       >
                         + Tarefa
+                      </Link>
+                      <Link
+                        href={`/rebanho/mudanca-lote?fromLotId=${lot.id}`}
+                        className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                      >
+                        Mudar de lote
                       </Link>
                       {isAdmin && (
                         <Link

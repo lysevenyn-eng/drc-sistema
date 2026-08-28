@@ -105,14 +105,21 @@ export default async function DashboardPage() {
     : null;
 
   // Pendências de Abates e óbitos (só admin, ver /abates-obitos): abate sem
-  // venda vinculada ainda (abateEvents.saleId nulo) e óbito sem motivo
-  // confirmado ainda (mortalityEvents.confirmedAt nulo).
+  // venda vinculada e sem resolução manual ainda (individual: saleId nulo;
+  // em lote: resolvedAt nulo — ver resolveAbateEventAction) e óbito sem
+  // motivo confirmado ainda (mortalityEvents.confirmedAt nulo).
   const [pendingAbateRows, pendingObitoRows] = isAdmin
     ? await Promise.all([
         db
           .select({ count: sql<number>`count(*)::int` })
           .from(abateEvents)
-          .where(and(eq(abateEvents.farmId, farmId), isNull(abateEvents.saleId))),
+          .where(
+            and(
+              eq(abateEvents.farmId, farmId),
+              isNull(abateEvents.saleId),
+              isNull(abateEvents.resolvedAt)
+            )
+          ),
         db
           .select({ count: sql<number>`count(*)::int` })
           .from(mortalityEvents)

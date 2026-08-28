@@ -78,6 +78,20 @@
       "when": 1787927782308,
       "tag": "0010_green_sinister_six",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787929622033,
+      "tag": "0011_hard_shatterstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787930580176,
+      "tag": "0012_perfect_jack_murdock",
+      "breakpoints": true
     }
   ]
 }
