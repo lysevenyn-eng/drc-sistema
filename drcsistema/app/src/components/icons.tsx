@@ -130,3 +130,26 @@ export const IconChevronRight = (p: IconProps) => (
     <path d="M9 6l6 6-6 6" />
   </Base>
 );
+
+export const IconChevronUp = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M6 15l6-6 6 6" />
+  </Base>
+);
+
+export const IconChevronDown = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M6 9l6 6 6-6" />
+  </Base>
+);
+
+export const IconSettings = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M4 6h9M17 6h3" />
+    <circle cx="14" cy="6" r="2" fill="currentColor" stroke="none" />
+    <path d="M4 12h3M11 12h9" />
+    <circle cx="8" cy="12" r="2" fill="currentColor" stroke="none" />
+    <path d="M4 18h9M17 18h3" />
+    <circle cx="14" cy="18" r="2" fill="currentColor" stroke="none" />
+  </Base>
+);

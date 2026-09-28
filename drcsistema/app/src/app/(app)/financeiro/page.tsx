@@ -8,6 +8,7 @@ import { PageHeader, StatCard, Card, Badge, EmptyState } from "@/components/ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { formatCurrency } from "@/lib/money";
 import { FinanceiroCharts } from "@/components/financeiro-charts";
+import { FinanceiroMetricCards } from "@/components/financeiro-metric-cards";
 import {
   markPayableAsPaidAction,
   markPayableAsUnpaidAction,
@@ -78,6 +79,12 @@ export default async function FinanceiroPage() {
   const totalDespesas = expenseList.reduce((sum, e) => sum + e.value, 0);
   const resultadoComercial = totalReceita - totalDespesas;
   const totalLucroVendas = saleList.reduce((sum, s) => sum + (s.profit ?? 0), 0);
+  // "Resultado final": a mesma ideia do lucro das vendas, só que também
+  // descontando as despesas (receita − custo do animal − despesas) — a quarta
+  // camada de receita pedida no redesign do dashboard, ao lado de Receita
+  // bruta, Lucro das vendas e Receita líquida (essa última é o mesmo cálculo
+  // do Resultado comercial acima, só que exibida com o nome novo).
+  const resultadoFinal = totalLucroVendas - totalDespesas;
   const totalCompras = purchaseList.reduce((sum, p) => sum + p.totalValue, 0);
 
   // Contas a pagar: não pagas primeiro (mais acionáveis), cada grupo por vencimento.
@@ -164,6 +171,7 @@ export default async function FinanceiroPage() {
       despesas: v.despesas,
       resultado: v.receita - v.despesas,
       lucroVendas: v.lucroVendas,
+      resultadoFinal: v.lucroVendas - v.despesas,
     }))
     .sort((a, b) => (a.key < b.key ? -1 : 1));
   const monthRows = [...monthRowsAsc].reverse();
@@ -175,39 +183,41 @@ export default async function FinanceiroPage() {
         description="Receitas, despesas e resultado comercial — separado do saldo real disponível na carteira"
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Receita (vendas)" value={formatCurrency(totalReceita)} hint="Total vendido, mesmo a prazo" />
-        <StatCard
-          label="Recebido"
-          value={formatCurrency(totalRecebido)}
-          hint="Caixa: à vista + parcelas já pagas"
-        />
-        <StatCard label="Despesas" value={formatCurrency(totalDespesas)} />
-        <StatCard
-          label="Resultado comercial"
-          value={formatCurrency(resultadoComercial)}
-          hint="Receita − despesas"
-        />
-        <StatCard
-          label="Lucro das vendas"
-          value={formatCurrency(totalLucroVendas)}
-          hint="Onde há custo registrado"
-        />
-        <StatCard
-          label="Investido em compras"
-          value={formatCurrency(totalCompras)}
-          hint="Não entra no resultado"
-        />
-        <StatCard
-          label="A pagar (em aberto)"
-          value={formatCurrency(totalPayableAberto)}
-          hint="Parcelas pendentes ou atrasadas"
-        />
-        <StatCard
-          label="A receber (em aberto)"
-          value={formatCurrency(totalReceivableAberto)}
-          hint="Parcelas pendentes ou atrasadas"
-        />
+      <FinanceiroMetricCards
+        totals={{
+          bruta: totalReceita,
+          custos: totalLucroVendas,
+          liquida: resultadoComercial,
+          final: resultadoFinal,
+        }}
+        monthRows={monthRowsAsc}
+      />
+
+      <div className="mt-6">
+        <h2 className="mb-3 text-sm font-semibold text-drc-green-950">Outros indicadores</h2>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+          <StatCard
+            label="Recebido"
+            value={formatCurrency(totalRecebido)}
+            hint="Caixa: à vista + parcelas já pagas"
+          />
+          <StatCard label="Despesas" value={formatCurrency(totalDespesas)} />
+          <StatCard
+            label="Investido em compras"
+            value={formatCurrency(totalCompras)}
+            hint="Não entra no resultado"
+          />
+          <StatCard
+            label="A pagar (em aberto)"
+            value={formatCurrency(totalPayableAberto)}
+            hint="Parcelas pendentes ou atrasadas"
+          />
+          <StatCard
+            label="A receber (em aberto)"
+            value={formatCurrency(totalReceivableAberto)}
+            hint="Parcelas pendentes ou atrasadas"
+          />
+        </div>
       </div>
 
       <FinanceiroCharts monthRows={monthRowsAsc} categoryRows={categoryRows} />
