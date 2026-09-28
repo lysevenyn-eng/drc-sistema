@@ -44,7 +44,7 @@ export default async function NovaPesagemPage({
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Peso (kg)">
-              <input name="weightKg" type="number" min={0} step={0.1} required className={inputClass} />
+              <input name="weightKg" type="number" min={0} step={0.001} required className={inputClass} />
             </Field>
             <Field label="Data da pesagem">
               <input name="weighedAt" type="date" required defaultValue={today} className={inputClass} />

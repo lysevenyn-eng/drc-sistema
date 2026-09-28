@@ -2,6 +2,7 @@ import Image from "next/image";
 import { getSession } from "@/lib/session";
 import { logoutAction } from "@/app/actions/auth";
 import { redirect } from "next/navigation";
+import { AuthShell } from "@/components/auth-shell";
 
 export default async function AccessPendingPage() {
   const session = await getSession();
@@ -9,15 +10,15 @@ export default async function AccessPendingPage() {
   if (session.status === "aprovado") redirect("/dashboard");
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-drc-green-950 px-4 py-12">
-      <div className="w-full max-w-sm text-center">
+    <AuthShell>
+      <div className="w-full text-center">
         <div className="mb-8 flex justify-center">
           <Image
-            src="/drc-logo.png"
+            src="/drc-logo-full.png"
             alt="DRC — Dorper Rebanho Carvalho"
-            width={96}
-            height={96}
-            className="rounded-full shadow-lg"
+            width={220}
+            height={94}
+            className="drop-shadow-lg"
           />
         </div>
         <div className="rounded-2xl bg-drc-cream-50 p-8 shadow-xl">
@@ -38,6 +39,6 @@ export default async function AccessPendingPage() {
           </form>
         </div>
       </div>
-    </main>
+    </AuthShell>
   );
 }

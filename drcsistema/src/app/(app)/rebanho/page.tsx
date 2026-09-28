@@ -7,14 +7,15 @@ import { PageHeader, Card, Badge, EmptyState } from "@/components/ui";
 import {
   createBreedAction,
   updateLotStatusAction,
+  updateLotAvgWeightAction,
   deleteLotAction,
   deleteAnimalAction,
 } from "@/app/actions/rebanho";
 import { ConfirmForm } from "@/components/confirm-form";
 import { overallGpd, formatGpd } from "@/lib/gpd";
 
-const STATUS_TONE = { ativo: "green", vendido: "gold", morto: "red" } as const;
-const STATUS_LABEL = { ativo: "Ativo", vendido: "Vendido", morto: "Morto" } as const;
+const STATUS_TONE = { ativo: "green", vendido: "gold", morto: "red", abatido: "neutral" } as const;
+const STATUS_LABEL = { ativo: "Ativo", vendido: "Vendido", morto: "Morto", abatido: "Abatido" } as const;
 
 export default async function RebanhoPage() {
   const session = await requireSession();
@@ -54,12 +55,20 @@ export default async function RebanhoPage() {
         <h2 className="text-sm font-semibold text-drc-green-950">
           Lotes {farmLots.length > 0 && `(${farmLots.length})`}
         </h2>
-        <Link
-          href="/rebanho/lotes/novo"
-          className="rounded-lg bg-drc-gold-500 px-3 py-1.5 text-sm font-semibold text-drc-green-950 hover:bg-drc-gold-400"
-        >
-          + Novo lote
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/rebanho/mudanca-lote"
+            className="text-sm font-medium text-drc-green-700 underline underline-offset-2"
+          >
+            Mudança de lote
+          </Link>
+          <Link
+            href="/rebanho/lotes/novo"
+            className="rounded-lg bg-drc-gold-500 px-3 py-1.5 text-sm font-semibold text-drc-green-950 hover:bg-drc-gold-400"
+          >
+            + Novo lote
+          </Link>
+        </div>
       </div>
       <Card className="mt-3 overflow-x-auto">
         {farmLots.length === 0 ? (
@@ -73,6 +82,7 @@ export default async function RebanhoPage() {
                 <th className="px-4 py-2.5">Composição</th>
                 <th className="px-4 py-2.5">Quantidade</th>
                 <th className="px-4 py-2.5">Custo/cabeça</th>
+                <th className="px-4 py-2.5">Peso médio</th>
                 <th className="px-4 py-2.5">Status</th>
                 <th className="px-4 py-2.5" />
               </tr>
@@ -88,6 +98,27 @@ export default async function RebanhoPage() {
                     {lot.costPerHead != null
                       ? lot.costPerHead.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
                       : "—"}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <form action={updateLotAvgWeightAction} className="flex items-center gap-1">
+                      <input type="hidden" name="lotId" value={lot.id} />
+                      <input
+                        name="avgWeightKg"
+                        type="number"
+                        min={0}
+                        step="0.001"
+                        defaultValue={lot.avgWeightKg ?? ""}
+                        placeholder="—"
+                        className="w-16 rounded border border-drc-border bg-white px-1.5 py-1 text-xs text-drc-green-950 outline-none focus:border-drc-green-700"
+                      />
+                      <span className="text-xs text-drc-green-900/50">kg</span>
+                      <button
+                        type="submit"
+                        className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                      >
+                        Salvar
+                      </button>
+                    </form>
                   </td>
                   <td className="px-4 py-2.5">
                     <Badge tone={lot.status === "ativo" ? "green" : "neutral"}>
@@ -116,6 +147,20 @@ export default async function RebanhoPage() {
                       >
                         + Tarefa
                       </Link>
+                      <Link
+                        href={`/rebanho/mudanca-lote?fromLotId=${lot.id}`}
+                        className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                      >
+                        Mudar de lote
+                      </Link>
+                      {isAdmin && (
+                        <Link
+                          href={`/compras-vendas?lotId=${lot.id}`}
+                          className="text-xs font-medium text-drc-green-700 underline underline-offset-2"
+                        >
+                          Ver compras
+                        </Link>
+                      )}
                       {isAdmin && (
                         <ConfirmForm
                           action={deleteLotAction}

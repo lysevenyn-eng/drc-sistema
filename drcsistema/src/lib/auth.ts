@@ -13,7 +13,7 @@ export async function verifyPassword(password: string, hash: string) {
   return bcrypt.compare(password, hash);
 }
 
-export type Role = "admin" | "criador";
+export type Role = "admin" | "criador" | "caseiro";
 export type UserStatus = "pendente" | "aprovado" | "rejeitado";
 
 export type SessionPayload = {

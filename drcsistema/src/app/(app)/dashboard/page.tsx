@@ -1,9 +1,13 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import Link from "next/link";
+import { and, eq, isNull, gte, lte, sql } from "drizzle-orm";
+import { format, startOfMonth, endOfMonth } from "date-fns";
 import { requireSession } from "@/lib/session";
 import { db } from "@/db";
-import { animals, lots } from "@/db/schema";
+import { animals, lots, managementTasks, sales, expenses, abateEvents, mortalityEvents } from "@/db/schema";
 import { PageHeader, StatCard, Card, EmptyState } from "@/components/ui";
 import { overallGpd, formatGpd } from "@/lib/gpd";
+import { formatCurrency } from "@/lib/money";
+import { MiniCalendario } from "@/components/mini-calendario";
 
 export default async function DashboardPage() {
   const session = await requireSession();
@@ -54,6 +58,78 @@ export default async function DashboardPage() {
   const lotHeadcount = lotAgg?.headcount ?? 0;
   const totalGeral = individualCount + lotHeadcount;
 
+  // Tarefas de manejo pendentes (não concluídas) — usadas no mini calendário do
+  // card "Tarefas de manejo". Sem filtro de data na query: o volume de tarefas
+  // em aberto de uma fazenda é pequeno, mais simples separar por dia aqui mesmo.
+  const pendingTasks = await db.query.managementTasks.findMany({
+    where: and(eq(managementTasks.farmId, farmId), isNull(managementTasks.completedDate)),
+    columns: { id: true, scheduledDate: true },
+  });
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const pendingDays = new Set<string>();
+  const overdueDays = new Set<string>();
+  let overdueCount = 0;
+  for (const t of pendingTasks) {
+    const scheduled = new Date(t.scheduledDate);
+    const key = format(scheduled, "yyyy-MM-dd");
+    if (scheduled < todayStart) {
+      overdueDays.add(key);
+      overdueCount++;
+    } else {
+      pendingDays.add(key);
+    }
+  }
+  const pendingCount = pendingTasks.length - overdueCount;
+
+  // Resultado comercial do mês atual — só calculado (e só exibido) para admin,
+  // mesma regra de "só admin vê valores financeiros" do resto do sistema.
+  const isAdmin = session.role === "admin";
+  const monthStart = startOfMonth(todayStart);
+  const monthEnd = endOfMonth(todayStart);
+  const [monthSales, monthExpenses] = isAdmin
+    ? await Promise.all([
+        db.query.sales.findMany({
+          where: and(eq(sales.farmId, farmId), gte(sales.saleDate, monthStart), lte(sales.saleDate, monthEnd)),
+          columns: { totalValue: true },
+        }),
+        db.query.expenses.findMany({
+          where: and(eq(expenses.farmId, farmId), gte(expenses.date, monthStart), lte(expenses.date, monthEnd)),
+          columns: { value: true },
+        }),
+      ])
+    : [[], []];
+  const resultadoMes = isAdmin
+    ? monthSales.reduce((sum, s) => sum + s.totalValue, 0) -
+      monthExpenses.reduce((sum, e) => sum + e.value, 0)
+    : null;
+
+  // Pendências de Abates e óbitos (só admin, ver /abates-obitos): abate sem
+  // venda vinculada e sem resolução manual ainda (individual: saleId nulo;
+  // em lote: resolvedAt nulo — ver resolveAbateEventAction) e óbito sem
+  // motivo confirmado ainda (mortalityEvents.confirmedAt nulo).
+  const [pendingAbateRows, pendingObitoRows] = isAdmin
+    ? await Promise.all([
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(abateEvents)
+          .where(
+            and(
+              eq(abateEvents.farmId, farmId),
+              isNull(abateEvents.saleId),
+              isNull(abateEvents.resolvedAt)
+            )
+          ),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(mortalityEvents)
+          .where(and(eq(mortalityEvents.farmId, farmId), isNull(mortalityEvents.confirmedAt))),
+      ])
+    : [[], []];
+  const pendingAbateCount = pendingAbateRows[0]?.count ?? 0;
+  const pendingObitoCount = pendingObitoRows[0]?.count ?? 0;
+  const pendingTotal = pendingAbateCount + pendingObitoCount;
+
   return (
     <div>
       <PageHeader title="Visão geral" description="Resumo do rebanho DRC" />
@@ -78,19 +154,67 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Card className="p-5">
-          <h2 className="text-sm font-semibold text-drc-green-950">Tarefas de manejo</h2>
-          <p className="mt-2 text-sm text-drc-green-900/60">
-            Em breve — calendário de manejo.
-          </p>
+      <div className={`mt-6 grid gap-4 ${isAdmin ? "lg:grid-cols-3" : ""}`}>
+        <Card className="p-0">
+          <Link
+            href="/manejo/calendario"
+            className="block rounded-xl p-5 transition hover:bg-drc-green-950/[0.03]"
+          >
+            <h2 className="text-sm font-semibold text-drc-green-950">Tarefas de manejo</h2>
+            <p className="mt-1 text-xs text-drc-green-900/60">
+              {pendingTasks.length === 0
+                ? "Nenhuma tarefa pendente."
+                : `${pendingCount} pendente${pendingCount === 1 ? "" : "s"}${
+                    overdueCount > 0
+                      ? `, ${overdueCount} atrasada${overdueCount === 1 ? "" : "s"}`
+                      : ""
+                  }.`}
+            </p>
+            <div className="mt-3">
+              <MiniCalendario
+                monthDate={todayStart}
+                pendingDays={pendingDays}
+                overdueDays={overdueDays}
+              />
+            </div>
+          </Link>
         </Card>
-        <Card className="p-5">
-          <h2 className="text-sm font-semibold text-drc-green-950">Resultado comercial</h2>
-          <p className="mt-2 text-sm text-drc-green-900/60">
-            Em breve — receitas, despesas e resultado comercial.
-          </p>
-        </Card>
+        {isAdmin && (
+          <Card className="p-0">
+            <Link
+              href="/financeiro"
+              className="block rounded-xl p-5 transition hover:bg-drc-green-950/[0.03]"
+            >
+              <h2 className="text-sm font-semibold text-drc-green-950">Resultado comercial</h2>
+              <p className="mt-1 text-xs text-drc-green-900/60">Vendas − despesas neste mês</p>
+              <p
+                className={`mt-3 text-2xl font-semibold ${
+                  (resultadoMes ?? 0) >= 0 ? "text-drc-green-950" : "text-red-600"
+                }`}
+              >
+                {formatCurrency(resultadoMes)}
+              </p>
+              <p className="mt-2 text-xs text-drc-green-900/50">Ver financeiro completo →</p>
+            </Link>
+          </Card>
+        )}
+        {isAdmin && (
+          <Card className="p-0">
+            <Link
+              href="/abates-obitos"
+              className="block rounded-xl p-5 transition hover:bg-drc-green-950/[0.03]"
+            >
+              <h2 className="text-sm font-semibold text-drc-green-950">Pendências</h2>
+              <p className="mt-1 text-xs text-drc-green-900/60">Abates e óbitos aguardando você</p>
+              <p className="mt-3 text-2xl font-semibold text-drc-green-950">{pendingTotal}</p>
+              <p className="mt-2 text-xs text-drc-green-900/50">
+                {pendingTotal === 0
+                  ? "Nenhuma pendência no momento."
+                  : `${pendingAbateCount} abate(s) aguardando venda · ${pendingObitoCount} óbito(s) aguardando confirmação.`}
+              </p>
+            </Link>
+          </Card>
+        )}
       </div>
 
       <Card className="mt-6 flex flex-wrap items-center justify-between gap-3 p-5">

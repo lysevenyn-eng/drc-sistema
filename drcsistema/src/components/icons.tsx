@@ -105,6 +105,20 @@ export const IconLogout = (p: IconProps) => (
   </Base>
 );
 
+export const IconReport = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M8 17v-4M12 17V9M16 17v-7" />
+  </Base>
+);
+
+export const IconEarTag = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M3 12L9 5h9a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H9l-6-2Z" />
+    <circle cx="15.5" cy="10.5" r="1.1" fill="currentColor" stroke="none" />
+  </Base>
+);
+
 export const IconChevronLeft = (p: IconProps) => (
   <Base {...p}>
     <path d="M15 6l-6 6 6 6" />

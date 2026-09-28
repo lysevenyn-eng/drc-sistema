@@ -8,6 +8,7 @@ import {
   lots,
   animals,
   mortalityEvents,
+  abateEvents,
   reproductionEvents,
   weighings,
   managementTasks,
@@ -16,6 +17,7 @@ import { PageHeader, Card, Badge } from "@/components/ui";
 import {
   updateAnimalAction,
   registerDeathAction,
+  confirmDeathReasonAction,
   reactivateAnimalAction,
   deleteAnimalAction,
 } from "@/app/actions/rebanho";
@@ -27,6 +29,13 @@ import {
 } from "@/app/actions/manejo";
 import { computeGpdSeries, overallGpd, formatGpd } from "@/lib/gpd";
 import { ConfirmForm } from "@/components/confirm-form";
+import { FatherField } from "@/components/father-field";
+
+const BREEDING_METHOD_LABEL: Record<string, string> = {
+  monta_natural: "Monta natural",
+  inseminacao_artificial: "Inseminação artificial (I.A.)",
+  transferencia_embriao: "Transferência de embrião (TE)",
+};
 
 const EVENT_LABEL: Record<string, string> = {
   cobertura: "Cobertura",
@@ -41,6 +50,8 @@ const TASK_TYPE_LABEL: Record<string, string> = {
   vermifugo: "Vermífugo",
   medicamento: "Medicamento",
   casqueamento: "Casqueamento",
+  desmame: "Desmame",
+  pesagem: "Pesagem",
   outro: "Outro",
 };
 
@@ -63,7 +74,7 @@ export default async function AnimalDetailPage({
   });
   if (!animal) notFound();
 
-  const [farmBreeds, activeLots, mothers, fathers, deaths, reproHistory, weighHistory, tasks] = await Promise.all([
+  const [farmBreeds, activeLots, mothers, fathers, deaths, abateEvent, reproHistory, weighHistory, tasks] = await Promise.all([
     db.query.breeds.findMany({ where: eq(breeds.farmId, farmId), orderBy: (b, { asc }) => [asc(b.name)] }),
     db.query.lots.findMany({ where: and(eq(lots.farmId, farmId), eq(lots.status, "ativo")) }),
     db.query.animals.findMany({
@@ -86,9 +97,16 @@ export default async function AnimalDetailPage({
       where: eq(mortalityEvents.animalId, id),
       orderBy: (m, { desc }) => [desc(m.eventDate)],
     }),
+    animal.status === "abatido"
+      ? db.query.abateEvents.findFirst({
+          where: eq(abateEvents.animalId, id),
+          orderBy: (e, { desc }) => [desc(e.createdAt)],
+        })
+      : Promise.resolve(null),
     animal.sex === "femea"
       ? db.query.reproductionEvents.findMany({
           where: eq(reproductionEvents.motherId, id),
+          with: { father: true, donorMother: true },
           orderBy: (e, { desc }) => [desc(e.eventDate)],
         })
       : Promise.resolve([]),
@@ -99,6 +117,7 @@ export default async function AnimalDetailPage({
     db.query.managementTasks.findMany({
       where: eq(managementTasks.animalId, id),
       orderBy: (t, { desc }) => [desc(t.scheduledDate)],
+      with: { assignees: { with: { user: true } } },
     }),
   ]);
 
@@ -116,8 +135,24 @@ export default async function AnimalDetailPage({
         description="Editar cadastro do animal"
         showBack
         action={
-          <Badge tone={animal.status === "ativo" ? "green" : animal.status === "vendido" ? "gold" : "red"}>
-            {animal.status === "ativo" ? "Ativo" : animal.status === "vendido" ? "Vendido" : "Morto"}
+          <Badge
+            tone={
+              animal.status === "ativo"
+                ? "green"
+                : animal.status === "vendido"
+                  ? "gold"
+                  : animal.status === "abatido"
+                    ? "neutral"
+                    : "red"
+            }
+          >
+            {animal.status === "ativo"
+              ? "Ativo"
+              : animal.status === "vendido"
+                ? "Vendido"
+                : animal.status === "abatido"
+                  ? "Abatido"
+                  : "Morto"}
           </Badge>
         }
       />
@@ -187,17 +222,35 @@ export default async function AnimalDetailPage({
                   ))}
                 </select>
               </Field>
-              <Field label="Pai">
-                <select name="fatherId" defaultValue={animal.fatherId ?? ""} className={inputClass}>
-                  <option value="">— Não informado —</option>
-                  {fathers.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.tag} {f.name ? `— ${f.name}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              <FatherField
+                fathers={fathers}
+                label="Pai"
+                defaultFatherId={animal.fatherId ?? undefined}
+                defaultExternalName={animal.externalFatherName ?? undefined}
+              />
             </div>
+            <Field label="Método (opcional)">
+              <div className="flex gap-4 text-sm text-drc-green-900">
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="breedingMethod"
+                    value="monta_natural"
+                    defaultChecked={animal.breedingMethod !== "inseminacao_artificial"}
+                  />
+                  Monta natural
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="breedingMethod"
+                    value="inseminacao_artificial"
+                    defaultChecked={animal.breedingMethod === "inseminacao_artificial"}
+                  />
+                  Inseminação artificial (I.A.)
+                </label>
+              </div>
+            </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Lote">
                 <select name="lotId" defaultValue={animal.lotId ?? ""} className={inputClass}>
@@ -233,12 +286,20 @@ export default async function AnimalDetailPage({
               <form action={registerDeathAction} className="space-y-3">
                 <input type="hidden" name="animalId" value={animal.id} />
                 <p className="text-xs text-drc-green-900/60">
-                  Registrar óbito — o motivo é obrigatório. Se o animal estiver em um lote, a
-                  quantidade do lote será reduzida em 1.
+                  Registrar óbito
+                  {isAdmin
+                    ? " — o motivo é obrigatório."
+                    : " — se souber o motivo, informe; senão pode deixar em branco, o administrador confirma depois."}{" "}
+                  Se o animal estiver em um lote, a quantidade do lote será reduzida em 1. Para
+                  registrar um abate, use a tela{" "}
+                  <Link href="/abates-obitos" className="underline underline-offset-2">
+                    Abates e óbitos
+                  </Link>
+                  .
                 </p>
                 <textarea
                   name="reason"
-                  required
+                  required={isAdmin}
                   rows={3}
                   placeholder="Motivo do óbito (ex.: doença, predador, complicação no parto...)"
                   className={inputClass}
@@ -250,15 +311,76 @@ export default async function AnimalDetailPage({
                   Registrar óbito
                 </button>
               </form>
+            ) : animal.status === "abatido" ? (
+              <div className="space-y-3">
+                <p className="text-sm text-drc-green-900/80">
+                  Abatido em{" "}
+                  {abateEvent ? new Date(abateEvent.eventDate).toLocaleDateString("pt-BR") : "—"}
+                  {abateEvent?.carcassWeightKg != null ? ` · carcaça ${abateEvent.carcassWeightKg} kg` : ""}
+                  {abateEvent?.liveWeightKg != null ? ` · vivo ${abateEvent.liveWeightKg} kg` : ""}
+                </p>
+                {abateEvent?.notes && (
+                  <p className="text-xs text-drc-green-900/60">{abateEvent.notes}</p>
+                )}
+                <p className="text-xs font-medium text-drc-green-900">
+                  Aguardando registro da venda.
+                </p>
+                {isAdmin && (
+                  <Link
+                    href={`/compras-vendas/vendas/novo?animalId=${animal.id}`}
+                    className="block w-full rounded-lg bg-drc-gold-500 px-3 py-2 text-center text-sm font-semibold text-drc-green-950 hover:bg-drc-gold-400"
+                  >
+                    Registrar venda
+                  </Link>
+                )}
+                <form action={reactivateAnimalAction}>
+                  <input type="hidden" name="animalId" value={animal.id} />
+                  <button
+                    type="submit"
+                    className="w-full rounded-lg border border-drc-green-700 px-3 py-2 text-sm font-medium text-drc-green-900 hover:bg-drc-green-950/5"
+                  >
+                    Desfazer abate (reativar animal)
+                  </button>
+                </form>
+              </div>
             ) : (
               <div className="space-y-3">
                 <p className="text-sm text-drc-green-900/80">
                   {animal.statusReason || "Sem motivo registrado."}
                 </p>
+                {animal.status === "morto" && deaths[0] && !deaths[0].confirmedAt && (
+                  <Badge tone="gold">
+                    {isAdmin
+                      ? "Motivo ainda não confirmado"
+                      : "Aguardando confirmação do motivo pelo administrador"}
+                  </Badge>
+                )}
                 {animal.statusChangedAt && (
                   <p className="text-xs text-drc-green-900/50">
                     Alterado em {new Date(animal.statusChangedAt).toLocaleString("pt-BR")}
                   </p>
+                )}
+                {isAdmin && animal.status === "morto" && deaths[0] && !deaths[0].confirmedAt && (
+                  <form
+                    action={confirmDeathReasonAction}
+                    className="space-y-2 rounded-lg bg-drc-green-950/5 p-3"
+                  >
+                    <input type="hidden" name="eventId" value={deaths[0].id} />
+                    <textarea
+                      name="reason"
+                      required
+                      rows={2}
+                      defaultValue={deaths[0].reason ?? ""}
+                      placeholder="Confirmar motivo do óbito"
+                      className={inputClass}
+                    />
+                    <button
+                      type="submit"
+                      className="w-full rounded-lg bg-drc-gold-500 px-3 py-2 text-sm font-semibold text-drc-green-950 hover:bg-drc-gold-400"
+                    >
+                      Confirmar motivo
+                    </button>
+                  </form>
                 )}
                 <form action={reactivateAnimalAction}>
                   <input type="hidden" name="animalId" value={animal.id} />
@@ -367,7 +489,12 @@ export default async function AnimalDetailPage({
               <p className="text-sm text-drc-green-900/60">Nenhuma tarefa registrada ainda.</p>
             ) : (
               <ul className="space-y-2 text-sm text-drc-green-900/80">
-                {tasks.map((t) => (
+                {tasks.map((t) => {
+                  const assigned = t.assignees
+                    .map((a) => a.user?.name)
+                    .filter(Boolean)
+                    .join(", ");
+                  return (
                   <li
                     key={t.id}
                     className="flex items-start justify-between gap-2 border-b border-drc-border/60 pb-2 last:border-0"
@@ -387,6 +514,9 @@ export default async function AnimalDetailPage({
                           ? ` · concluída em ${new Date(t.completedDate).toLocaleDateString("pt-BR")}`
                           : ""}
                       </p>
+                      {assigned && (
+                        <p className="text-xs text-drc-green-900/50">Atribuído a: {assigned}</p>
+                      )}
                       {t.notes && <p className="text-xs text-drc-green-900/50">{t.notes}</p>}
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -430,7 +560,8 @@ export default async function AnimalDetailPage({
                       )}
                     </div>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </Card>
@@ -478,6 +609,27 @@ export default async function AnimalDetailPage({
                       )}
                       {ev.eventType === "diagnostico_gestacao" && (
                         <p>{ev.pregnant === true ? "Positivo" : ev.pregnant === false ? "Negativo" : "—"}</p>
+                      )}
+                      {(ev.eventType === "cobertura" || ev.eventType === "parto") &&
+                        (ev.father || ev.externalFatherName) && (
+                          <p>
+                            Pai: {ev.father ? `${ev.father.tag}${ev.father.name ? ` — ${ev.father.name}` : ""}` : ev.externalFatherName}
+                            {ev.externalFatherName && !ev.father ? " (externo)" : ""}
+                          </p>
+                        )}
+                      {ev.eventType === "cobertura" && ev.breedingMethod && (
+                        <p>{BREEDING_METHOD_LABEL[ev.breedingMethod] ?? ev.breedingMethod}</p>
+                      )}
+                      {ev.eventType === "cobertura" && ev.breedingMethod === "transferencia_embriao" && (
+                        <p>
+                          Doadora:{" "}
+                          {ev.donorMother
+                            ? `${ev.donorMother.tag}${ev.donorMother.name ? ` — ${ev.donorMother.name}` : ""}`
+                            : ev.externalDonorName
+                              ? `${ev.externalDonorName} (externa)`
+                              : "não informada"}{" "}
+                          — {animal.tag} foi a receptora
+                        </p>
                       )}
                       {ev.notes && <p>{ev.notes}</p>}
                       <p className="text-xs text-drc-green-900/50">
