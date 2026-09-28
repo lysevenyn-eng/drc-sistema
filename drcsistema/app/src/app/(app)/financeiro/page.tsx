@@ -7,6 +7,7 @@ import { sales, expenses, purchases, accountsPayable, accountsReceivable } from 
 import { PageHeader, StatCard, Card, Badge, EmptyState } from "@/components/ui";
 import { ConfirmForm } from "@/components/confirm-form";
 import { formatCurrency } from "@/lib/money";
+import { FinanceiroCharts } from "@/components/financeiro-charts";
 import {
   markPayableAsPaidAction,
   markPayableAsUnpaidAction,
@@ -33,6 +34,13 @@ function monthLabel(key: string) {
   // Tailwind's `capitalize` maiusculiza cada palavra ("Agosto De 2026") — em vez disso,
   // maiusculiza só a primeira letra da string inteira, como se escreve em português.
   const raw = format(new Date(`${key}-01T00:00:00`), "MMMM 'de' yyyy", { locale: ptBR });
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+// Rótulo curto ("Set/26") pro eixo dos gráficos — mesma regra de capitalização acima,
+// só que sem repetir esse mês inteiro toda vez (eixo fica apertado com 12 meses).
+function shortMonthLabel(key: string) {
+  const raw = format(new Date(`${key}-01T00:00:00`), "MMM/yy", { locale: ptBR });
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
@@ -121,26 +129,44 @@ export default async function FinanceiroPage() {
     byCategory.set(e.category, entry);
   }
   const categoryRows = Array.from(byCategory.entries())
-    .map(([category, v]) => ({ category, ...v }))
+    .map(([category, v]) => ({ category, label: CATEGORY_LABEL[category] ?? category, ...v }))
     .sort((a, b) => b.total - a.total);
 
-  // Resultado por mês (receita de vendas − despesas), mais recente primeiro.
-  const byMonth = new Map<string, { receita: number; despesas: number }>();
+  // Resultado por mês (receita de vendas − despesas) + lucro das vendas do mês
+  // (soma de sales.profit, mesma métrica do StatCard "Lucro das vendas" lá em
+  // cima, só quebrada por mês) — tudo a partir de saleList/expenseList já
+  // carregados acima, sem nenhuma query nova nem conta que não bata com os
+  // StatCards.
+  const byMonth = new Map<string, { receita: number; despesas: number; lucroVendas: number }>();
   for (const s of saleList) {
     const key = monthKey(s.saleDate);
-    const m = byMonth.get(key) ?? { receita: 0, despesas: 0 };
+    const m = byMonth.get(key) ?? { receita: 0, despesas: 0, lucroVendas: 0 };
     m.receita += s.totalValue;
+    m.lucroVendas += s.profit ?? 0;
     byMonth.set(key, m);
   }
   for (const e of expenseList) {
     const key = monthKey(e.date);
-    const m = byMonth.get(key) ?? { receita: 0, despesas: 0 };
+    const m = byMonth.get(key) ?? { receita: 0, despesas: 0, lucroVendas: 0 };
     m.despesas += e.value;
     byMonth.set(key, m);
   }
-  const monthRows = Array.from(byMonth.entries())
-    .map(([key, v]) => ({ key, ...v }))
-    .sort((a, b) => (a.key < b.key ? 1 : -1));
+  // Ordem cronológica crescente é a natural pros gráficos (linha do tempo lê
+  // da esquerda pra direita); a tabela "Resultado por mês" abaixo sempre foi
+  // mais recente primeiro, então essa vira só uma cópia invertida da mesma
+  // lista — um único cálculo, duas ordens de exibição.
+  const monthRowsAsc = Array.from(byMonth.entries())
+    .map(([key, v]) => ({
+      key,
+      label: monthLabel(key),
+      shortLabel: shortMonthLabel(key),
+      receita: v.receita,
+      despesas: v.despesas,
+      resultado: v.receita - v.despesas,
+      lucroVendas: v.lucroVendas,
+    }))
+    .sort((a, b) => (a.key < b.key ? -1 : 1));
+  const monthRows = [...monthRowsAsc].reverse();
 
   return (
     <div>
@@ -183,6 +209,8 @@ export default async function FinanceiroPage() {
           hint="Parcelas pendentes ou atrasadas"
         />
       </div>
+
+      <FinanceiroCharts monthRows={monthRowsAsc} categoryRows={categoryRows} />
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card className="overflow-x-auto p-5">
